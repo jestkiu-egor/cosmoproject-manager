@@ -72,6 +72,8 @@ export default function App() {
           <ProjectDetail 
             project={selectedProject} 
             onBack={() => setSelectedProject(null)} 
+            onUpdateProxies={handleUpdateProxies}
+            onUpdateTasks={handleUpdateTasks}
           />
         ) : (
           <ProjectList 
@@ -153,6 +155,16 @@ export default function App() {
         }
         @keyframes spin-slow {
           from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        .animate-spin-slow {
+          animation: spin-slow 12s linear infinite;
+        }
+      `}</style>
+    </div>
+  );
+}
+deg); }
           to { transform: rotate(360deg); }
         }
         .animate-spin-slow {

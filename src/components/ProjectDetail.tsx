@@ -135,62 +135,10 @@ export const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
           )}
 
           {activeTab === 'proxy' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xl font-bold text-white">Список Прокси</h2>
-                <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 rounded-xl font-semibold hover:bg-indigo-600 hover:text-white transition-all">
-                  <Plus size={18} />
-                  <span>Добавить Прокси</span>
-                </button>
-              </div>
-              <div className="grid grid-cols-1 gap-4">
-                {project.proxies.map((proxy) => (
-                  <div key={proxy.id} className="bg-slate-900/40 border border-white/10 p-6 rounded-3xl backdrop-blur-xl flex flex-wrap items-center justify-between gap-6 group hover:border-indigo-500/30 transition-all">
-                    <div className="flex items-center gap-6 min-w-[300px]">
-                      <div className="w-12 h-12 bg-indigo-600/10 rounded-2xl flex items-center justify-center text-indigo-400">
-                        <Globe size={24} />
-                      </div>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">Прокси IP:PORT</span>
-                          <span className="text-white font-mono font-bold">{proxy.ip}:{proxy.port}</span>
-                          {proxy.isShared && <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[10px] font-bold rounded border border-red-500/20">Shrd</span>}
-                        </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          <span className="text-slate-500">Логин: <span className="text-orange-400 font-mono">{proxy.login}</span></span>
-                          <span className="text-slate-500">Пароль: <span className="text-white font-mono">{proxy.passwordHash}</span></span>
-                          <span className="px-2 py-0.5 bg-slate-800 text-slate-400 text-[10px] font-bold rounded border border-white/5">{proxy.type}</span>
-                        </div>
-                        {proxy.ipv6 && <div className="text-[10px] text-slate-600 font-mono">IPv6: {proxy.ipv6}</div>}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-12">
-                      <div className="space-y-1 text-right">
-                        <div className="text-slate-500 text-xs font-bold uppercase tracking-widest">Дата окончания</div>
-                        <div className="flex items-center gap-3 justify-end">
-                          <span className="text-emerald-400 font-mono text-sm">{format(proxy.expiresAt, 'dd.MM.yy, HH:mm')}</span>
-                          <span className={cn("px-2 py-0.5 rounded text-[10px] font-bold border", getStatusColor(proxy.expiresAt))}>
-                            {getDaysLeft(proxy.expiresAt)}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-2">
-                        {proxy.comment && (
-                          <button className="p-2 text-slate-500 hover:text-white transition-colors" title={proxy.comment}>
-                            <MessageSquare size={20} />
-                          </button>
-                        )}
-                        <button className="p-2 text-slate-500 hover:text-white transition-colors"><Copy size={20} /></button>
-                        <button className="p-2 text-slate-500 hover:text-white transition-colors"><Eye size={20} /></button>
-                        <button className="p-2 text-slate-500 hover:text-red-400 transition-colors"><Trash2 size={20} /></button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <ProxyTab 
+              project={project} 
+              onUpdateProxies={(proxies) => onUpdateProxies(project.id, proxies)} 
+            />
           )}
 
           {activeTab === 'api' && (
