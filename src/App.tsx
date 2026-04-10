@@ -16,22 +16,10 @@ export default function App() {
   const [projects, setProjects] = useState<Project[]>(SAMPLE_PROJECTS);
 
   useEffect(() => {
-    async function checkSupabase() {
-      try {
-        // Пытаемся получить версию или список таблиц (даже если пустой)
-        const { error } = await supabase.rpc('get_service_status').limit(1);
-        
-        // Если RPC не настроен (обычно так и есть), Supabase вернет ошибку, 
-        // но это подтвердит наличие связи. Самый простой способ без 404 - 
-        // это просто проверить, что URL и Key инициализированы.
-        if (supabase) {
-          console.log('✅ Supabase клиент инициализирован');
-        }
-      } catch (err) {
-        console.error('Ошибка инициализации Supabase:', err);
-      }
+    // Простая проверка инициализации без сетевых запросов к несуществующим ресурсам
+    if (supabase) {
+      console.log('✅ Supabase клиент готов к работе');
     }
-    checkSupabase();
   }, []);
 
   const handleAddProject = (newProject: Project) => {
