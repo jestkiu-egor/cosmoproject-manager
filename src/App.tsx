@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { StarField } from './components/StarField';
 import { ProjectList } from './components/ProjectList';
@@ -8,11 +8,30 @@ import { Finance } from './components/Finance';
 import { SAMPLE_PROJECTS } from './constants';
 import { Project, Task, Transaction } from './types';
 import { AnimatePresence, motion } from 'motion/react';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>(SAMPLE_PROJECTS);
+
+  useEffect(() => {
+    async function checkSupabase() {
+      try {
+        const { data, error } = await supabase.from('_test_connection_').select('*').limit(1);
+        // Ошибка 'PGRST116' или '42P01' (таблица не найдена) — это тоже хороший знак, 
+        // значит клиент достучался до базы, но таблицы просто нет.
+        if (error && error.code !== '42P01') {
+          console.error('Ошибка подключения к Supabase:', error.message);
+        } else {
+          console.log('✅ Supabase подключен успешно!');
+        }
+      } catch (err) {
+        console.error('Непредвиденная ошибка при проверке Supabase:', err);
+      }
+    }
+    checkSupabase();
+  }, []);
 
   const handleAddProject = (newProject: Project) => {
     setProjects(prev => [...prev, newProject]);
