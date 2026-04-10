@@ -13,7 +13,14 @@ import { supabase } from './lib/supabase';
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [projects, setProjects] = useState<Project[]>(SAMPLE_PROJECTS);
+  const [projects, setProjects] = useState<Project[]>(() => {
+    const saved = localStorage.getItem('cosmo_projects');
+    return saved ? JSON.parse(saved) : SAMPLE_PROJECTS;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('cosmo_projects', JSON.stringify(projects));
+  }, [projects]);
 
   useEffect(() => {
     // Простая проверка инициализации без сетевых запросов к несуществующим ресурсам
