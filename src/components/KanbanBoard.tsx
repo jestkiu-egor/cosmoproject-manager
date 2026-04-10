@@ -28,6 +28,7 @@ import {
   ExternalLink,
   Folder,
   GripVertical,
+  Sparkles,
   Trash2,
   Check,
   LayoutGrid,
@@ -40,6 +41,8 @@ import {
 import { Task, TaskStatus, Project } from '../types';
 import { format, isPast } from 'date-fns';
 import { cn } from '../lib/utils';
+import { VoiceInput } from '../lib/VoiceInput';
+import { parseTaskWithAI } from '../lib/groq';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -379,6 +382,10 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [kanbanSearchQuery, setKanbanSearchQuery] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [aiText, setAiText] = useState('');
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [aiInputText, setAiInputText] = useState('');
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -575,6 +582,53 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
     setSelectedTask(task);
   };
 
+  const handleAICreateTask = async (text: string) => {
+    setIsProcessing(true);
+    setAiModalOpen(false);
+    
+    try {
+      const parsed = await parseTaskWithAI(text);
+      
+      if (parsed) {
+        const newTask: Task = {
+          id: Math.random().toString(36).substr(2, 9),
+          title: parsed.title || text.slice(0, 50),
+          description: parsed.description || text,
+          status: 'todo',
+          priority: parsed.priority || 'medium',
+          comments: [],
+          dueDate: parsed.dueDate ? new Date(parsed.dueDate) : undefined,
+          amount: parsed.amount || 0,
+          isPaid: false,
+          isAgreed: false,
+          externalUrl: parsed.externalUrl,
+          assignee: parsed.assignee,
+        };
+        onUpdateTasks([...tasks, newTask]);
+      } else {
+        const newTask: Task = {
+          id: Math.random().toString(36).substr(2, 9),
+          title: text.slice(0, 50),
+          description: text,
+          status: 'todo',
+          priority: 'medium',
+          comments: [],
+          dueDate: undefined,
+          amount: 0,
+          isPaid: false,
+          isAgreed: false,
+        };
+        onUpdateTasks([...tasks, newTask]);
+      }
+    } catch (error) {
+      console.error('Error creating AI task:', error);
+    } finally {
+      setIsProcessing(false);
+      setAiText('');
+      setAiInputText('');
+    }
+  };
+
   const activeTask = activeId && !activeId.startsWith('column-') ? tasks.find(t => t.id === activeId) : null;
 
   return (
@@ -625,6 +679,24 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
             >
               <Plus size={16} />
               <span>Задача</span>
+            </button>
+            <VoiceInput 
+              onTranscript={(text) => setAiText(text)}
+              onFileTranscript={(text) => setAiText(text)}
+              isProcessing={isProcessing}
+            />
+            <button
+              onClick={() => {
+                if (aiText) {
+                  handleAICreateTask(aiText);
+                } else {
+                  setAiModalOpen(true);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-medium transition-all text-sm"
+            >
+              <Sparkles size={16} />
+              <span>AI</span>
             </button>
           </div>
         </div>
@@ -972,6 +1044,68 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
                   Удалить
                 </button>
               </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {aiModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setAiModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="text-purple-400" size={24} />
+                  <h2 className="text-xl font-bold text-white">Создать задачу с помощью ИИ</h2>
+                </div>
+                <button 
+                  onClick={() => setAiModalOpen(false)}
+                  className="p-2 hover:bg-white/5 rounded-lg text-slate-400"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+              <p className="text-slate-400 text-sm mb-4">
+                Опишите задачу обычным текстом. ИИ распознает название, срок, сумму, исполнителя и создаст задачу.
+              </p>
+              <form onSubmit={(e) => { e.preventDefault(); handleAICreateTask(aiInputText); }}>
+                <textarea
+                  autoFocus
+                  value={aiInputText}
+                  onChange={(e) => setAiInputText(e.target.value)}
+                  placeholder="Например: Нужно сделать лендинг для клиента Сидоров до пятницы, бюджет 50 тысяч, ответственный Петр"
+                  rows={4}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white placeholder:text-slate-600 outline-none focus:border-indigo-500 resize-none mb-4"
+                />
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setAiModalOpen(false)}
+                    className="flex-1 py-3 bg-white/5 border border-white/10 text-white rounded-xl font-bold hover:bg-white/10"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!aiInputText.trim() || isProcessing}
+                    className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-bold disabled:opacity-50"
+                  >
+                    {isProcessing ? 'Обработка...' : 'Создать'}
+                  </button>
+                </div>
+              </form>
             </motion.div>
           </div>
         )}
