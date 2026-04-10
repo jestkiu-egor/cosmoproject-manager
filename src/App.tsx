@@ -5,7 +5,7 @@ import { ProjectList } from './components/ProjectList';
 import { ProjectDetail } from './components/ProjectDetail';
 import { KanbanBoard } from './components/KanbanBoard';
 import { Finance } from './components/Finance';
-import { Project, Task, Transaction, Proxy } from './types';
+import { Project, Task, Transaction, Proxy, ApiKey } from './types';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from './lib/supabase';
 import { db } from './lib/db';
@@ -27,7 +27,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Простая проверка инициализации без сетевых запросов к несуществующим ресурсам
     if (supabase) {
       console.log('✅ Supabase клиент готов к работе');
     }
@@ -67,6 +66,13 @@ export default function App() {
     }
   };
 
+  const handleUpdateApiKeys = (projectId: string, apiKeys: ApiKey[]) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, apiKeys } : p));
+    if (selectedProject?.id === projectId) {
+      setSelectedProject(prev => prev ? { ...prev, apiKeys } : null);
+    }
+  };
+
   const handleAddTransaction = (projectId: string, transaction: Transaction) => {
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, transactions: [transaction, ...p.transactions] } : p));
     if (selectedProject?.id === projectId) {
@@ -74,8 +80,8 @@ export default function App() {
     }
   };
 
-  const allTransactions = projects.flatMap(p => p.transactions);
-  const allTasks = projects.flatMap(p => p.tasks);
+  const allTransactions = (projects || []).flatMap(p => p.transactions || []);
+  const allTasks = (projects || []).flatMap(p => p.tasks || []);
 
   const renderContent = () => {
     switch (activeTab) {
@@ -86,6 +92,7 @@ export default function App() {
             onBack={() => setSelectedProject(null)} 
             onUpdateProxies={handleUpdateProxies}
             onUpdateTasks={handleUpdateTasks}
+            onUpdateApiKeys={handleUpdateApiKeys}
           />
         ) : (
           <ProjectList 
@@ -105,7 +112,7 @@ export default function App() {
       case 'backlog':
         return (
           <KanbanBoard 
-            tasks={selectedProject ? selectedProject.tasks : allTasks} 
+            tasks={selectedProject ? (selectedProject.tasks || []) : allTasks} 
             onUpdateTasks={(tasks) => {
               if (selectedProject) {
                 handleUpdateTasks(selectedProject.id, tasks);
@@ -140,7 +147,11 @@ export default function App() {
             transition={{ duration: 0.3, ease: "easeOut" }}
             className="h-full"
           >
-            {renderContent()}
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : renderContent()}
           </motion.div>
         </AnimatePresence>
       </main>

@@ -109,5 +109,49 @@ export const db = {
 
     if (error) console.error('Ошибка получения настройки:', error);
     return data?.setting_value || null;
+  },
+
+  // Работа с API Ключами
+  async fetchApiKeys(projectId: string): Promise<ApiKey[]> {
+    const { data, error } = await supabase
+      .from('api_keys')
+      .select('*')
+      .eq('project_id', projectId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Ошибка загрузки API ключей:', error);
+      return [];
+    }
+
+    return (data || []).map(k => ({
+      id: k.id,
+      name: k.name,
+      key: k.key_value,
+      usageLocation: k.usage_location,
+      expiresAt: k.expires_at ? new Date(k.expires_at) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+    }));
+  },
+
+  async addApiKey(projectId: string, keyData: Partial<ApiKey>) {
+    const { data, error } = await supabase
+      .from('api_keys')
+      .insert([{
+        project_id: projectId,
+        name: keyData.name,
+        key_value: keyData.key,
+        usage_location: keyData.usageLocation,
+        expires_at: keyData.expiresAt?.toISOString()
+      }])
+      .select()
+      .single();
+
+    if (error) console.error('Ошибка добавления API ключа:', error);
+    return data;
+  },
+
+  async deleteApiKey(id: string) {
+    const { error } = await supabase.from('api_keys').delete().eq('id', id);
+    if (error) console.error('Ошибка удаления API ключа:', error);
   }
 };
