@@ -45,17 +45,37 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
     passwordHash: '',
   });
 
-  // В реальном приложении здесь будет fetch к px6.me
+  // Реальный вызов API px6.me
   const fetchProxyInfo = async () => {
     if (!apiKey) return;
     setIsLoading(true);
     try {
-      // Пример вызова API px6.me (согласно их доке)
-      // const res = await fetch(`https://api.px6.me/v1/user/proxies?api_key=${apiKey}`);
-      // ... логика обработки
-      console.log('Fetching from px6.me with key:', apiKey);
+      // Используем CORS прокси для обхода ограничений браузера при прямом запросе к API
+      const proxyUrl = 'https://corsproxy.io/?';
+      const apiUrl = encodeURIComponent(`https://api.px6.me/v1/user/proxies?api_key=${apiKey}`);
+      
+      const response = await fetch(proxyUrl + apiUrl);
+      const data = await response.json();
+
+      if (data.status === 'success' && data.proxies) {
+        const fetchedProxies: Proxy[] = data.proxies.map((p: any) => ({
+          id: p.id.toString(),
+          ip: p.ip,
+          port: p.port_http, // Используем HTTP порт по умолчанию
+          login: p.login,
+          passwordHash: p.password,
+          type: p.type.toUpperCase() as any,
+          ipv6: p.ip_v6,
+          expiresAt: new Date(p.date_end * 1000), // px6 отдает время в секундах
+        }));
+
+        onUpdateProxies([...project.proxies, ...fetchedProxies]);
+        console.log('✅ Подгружено прокси:', fetchedProxies.length);
+      } else {
+        console.error('Ошибка API px6.me:', data.message || 'Неизвестная ошибка');
+      }
     } catch (error) {
-      console.error('API Error:', error);
+      console.error('Ошибка сети при запросе к px6.me:', error);
     } finally {
       setIsLoading(false);
     }
