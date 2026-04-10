@@ -13,6 +13,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>(SAMPLE_PROJECTS);
+  const [taskProjectId, setTaskProjectId] = useState<string | null>(null);
 
   const handleAddProject = (newProject: Project) => {
     setProjects(prev => [...prev, newProject]);
@@ -70,23 +71,19 @@ export default function App() {
           />
         );
       case 'backlog':
-        // If a project is selected, show its tasks, otherwise maybe show all?
-        // Let's assume for now it shows tasks of the first project if none selected, or all tasks.
-        // User said "Kanban", usually it's per project. 
-        // Let's make it show all tasks for now or first project's tasks.
         return (
           <KanbanBoard 
-            tasks={selectedProject ? selectedProject.tasks : allTasks} 
+            tasks={allTasks}
+            projects={projects}
+            selectedProjectId={taskProjectId}
             onUpdateTasks={(tasks) => {
-              if (selectedProject) {
-                handleUpdateTasks(selectedProject.id, tasks);
+              if (taskProjectId) {
+                handleUpdateTasks(taskProjectId, tasks);
               } else if (projects.length > 0) {
-                // Update tasks for the project they belong to
-                // This is a bit complex for global view, so let's stick to first project or selected
-                const projId = projects[0].id;
-                handleUpdateTasks(projId, tasks);
+                handleUpdateTasks(projects[0].id, tasks);
               }
             }}
+            onSelectProject={setTaskProjectId}
           />
         );
       default:
@@ -98,10 +95,17 @@ export default function App() {
     <div className="flex h-screen bg-[#020617] text-slate-200 overflow-hidden font-sans selection:bg-indigo-500/30">
       <StarField />
       
-      <Sidebar activeTab={activeTab} setActiveTab={(tab) => {
-        setActiveTab(tab);
-        setSelectedProject(null);
-      }} />
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={(tab) => {
+          setActiveTab(tab);
+          setSelectedProject(null);
+          if (tab !== 'backlog') setTaskProjectId(null);
+        }}
+        projects={projects}
+        selectedProjectId={taskProjectId}
+        onSelectProject={setTaskProjectId}
+      />
 
       <main className="flex-1 overflow-y-auto relative z-10 custom-scrollbar">
         <AnimatePresence mode="wait">

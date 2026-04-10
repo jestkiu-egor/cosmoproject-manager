@@ -19,6 +19,8 @@ export interface Task {
   isPaid?: boolean;
   isAgreed?: boolean;
   externalUrl?: string;
+  assignee?: string;
+  files?: string[];
 }
 
 export interface Proxy {
