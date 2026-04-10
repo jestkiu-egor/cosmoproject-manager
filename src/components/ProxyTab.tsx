@@ -9,10 +9,11 @@ import {
   ShieldCheck, 
   ExternalLink,
   Save,
-  Key as KeyIcon
+  Key as KeyIcon,
+  Calendar
 } from 'lucide-react';
 import { Project, Proxy } from '../types';
-import { format } from 'date-fns';
+import { format, differenceInDays } from 'date-fns';
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
 
@@ -25,6 +26,17 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const [apiKey, setApiKey] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+
+  const getDaysLeft = (date: Date) => {
+    const days = differenceInDays(new Date(date), new Date());
+    return days;
+  };
+
+  const getStatusColor = (days: number) => {
+    if (days < 3) return 'text-red-400 bg-red-400/10 border-red-400/20';
+    if (days < 7) return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
+    return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+  };
   const [newProxy, setNewProxy] = useState<Partial<Proxy>>({
     type: 'HTTPS',
     ip: '',
