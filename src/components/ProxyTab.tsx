@@ -32,7 +32,6 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
     passwordHash: '',
   });
 
-  // Загружаем API ключ при открытии вкладки
   useEffect(() => {
     async function loadSettings() {
       const key = await db.getSetting(project.id, 'px6_api_key');
@@ -50,7 +49,6 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
     try {
       await db.saveSetting(project.id, 'px6_api_key', apiKey);
       alert('✅ API Ключ успешно сохранен в базу');
-      // После сохранения ключа сразу пробуем загрузить прокси
       fetchProxyInfo();
     } catch (err) {
       alert('❌ Ошибка при сохранении ключа');
@@ -74,34 +72,40 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const fetchProxyInfo = async () => {
     if (!apiKey) return;
     setIsLoading(true);
-    console.log('🚀 Начинаю загрузку прокси с px6.me...');
+    console.log('🚀 Начинаю загрузку прокси с px6.link...');
     try {
+      // Используем актуальный адрес из документации
       const proxyUrl = 'https://corsproxy.io/?';
-      const apiUrl = encodeURIComponent(`https://api.px6.me/v1/user/proxies?api_key=${apiKey}`);
+      const apiUrl = encodeURIComponent(`https://px6.link/api/${apiKey}/getproxy`);
       
       const response = await fetch(proxyUrl + apiUrl);
       const data = await response.json();
       
-      console.log('📦 Ответ от px6.me:', data);
+      console.log('📦 Ответ от px6.link:', data);
 
-      if (data.status === 'success' && (data.proxies || data.list)) {
-        const rawList = data.proxies || data.list || [];
+      if (data.status === 'yes' && data.list) {
+        // Конвертируем объект list в массив
+        const rawList = Object.values(data.list);
         const fetchedProxies: Proxy[] = [];
         
-        for (const p of rawList) {
+        for (const p: any of rawList) {
+          // host - это IPv4, ip - это IPv6 или IPv4
+          const ipAddr = p.host || p.ip;
+          const portStr = p.port.toString();
+
           const exists = (project.proxies || []).some(existing => 
-            existing.ip === p.ip && existing.port === (p.port_http || p.port).toString()
+            existing.ip === ipAddr && existing.port === portStr
           );
           if (exists) continue;
 
           const proxyData: Partial<Proxy> = {
-            ip: p.ip,
-            port: (p.port_http || p.port).toString(),
-            login: p.login,
-            passwordHash: p.password,
-            type: (p.type?.toUpperCase() || 'HTTPS') as any,
-            ipv6: p.ip_v6,
-            expiresAt: new Date(p.date_end * 1000),
+            ip: ipAddr,
+            port: portStr,
+            login: p.user,
+            passwordHash: p.pass,
+            type: (p.type === 'socks' ? 'SOCKS5' : 'HTTPS') as any,
+            ipv6: p.host ? p.ip : undefined,
+            expiresAt: new Date(p.unixtime_end * 1000),
           };
 
           const created = await db.addProxy(project.id, proxyData);
@@ -121,15 +125,15 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
 
         if (fetchedProxies.length > 0) {
           onUpdateProxies([...(project.proxies || []), ...fetchedProxies]);
-          alert(`✅ Подгружено новых прокси: ${fetchedProxies.length}`);
+          alert(`✅ Подгружено новых прокси: ${fetchedProxies.length}\nБаланс: ${data.balance} ${data.currency}`);
         } else {
-          alert('Новых прокси не найдено или они уже есть в списке');
+          alert(`Новых прокси не найдено.\nБаланс: ${data.balance} ${data.currency}`);
         }
       } else {
-        alert(`Ошибка API: ${data.message || 'Неверный формат ответа'}`);
+        alert(`Ошибка API: ${data.error || 'Неверный формат ответа'}`);
       }
     } catch (error) {
-      console.error('Ошибка API px6.me:', error);
+      console.error('Ошибка API px6.link:', error);
       alert('Произошла ошибка при запросе к API. Проверьте консоль браузера.');
     } finally {
       setIsLoading(false);
@@ -187,7 +191,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
               <KeyIcon size={20} />
             </div>
             <div>
-              <h3 className="text-white font-bold">Интеграция px6.me</h3>
+              <h3 className="text-white font-bold">Интеграция px6.link</h3>
               <p className="text-slate-400 text-xs">Введите API ключ для синхронизации данных</p>
             </div>
           </div>
@@ -205,7 +209,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
             type="password" 
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="Ваш API Key от px6.me"
+            placeholder="Ваш API Key от px6.link"
             className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all placeholder:text-slate-600"
           />
           <button 
