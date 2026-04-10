@@ -6,7 +6,7 @@ import { ProjectDetail } from './components/ProjectDetail';
 import { KanbanBoard } from './components/KanbanBoard';
 import { Finance } from './components/Finance';
 import { SAMPLE_PROJECTS } from './constants';
-import { Project, Task, Transaction } from './types';
+import { Project, Task, Transaction, Proxy } from './types';
 import { AnimatePresence, motion } from 'motion/react';
 import { supabase } from './lib/supabase';
 
@@ -19,8 +19,6 @@ export default function App() {
     async function checkSupabase() {
       try {
         const { data, error } = await supabase.from('_test_connection_').select('*').limit(1);
-        // Ошибка 'PGRST116' или '42P01' (таблица не найдена) — это тоже хороший знак, 
-        // значит клиент достучался до базы, но таблицы просто нет.
         if (error && error.code !== '42P01') {
           console.error('Ошибка подключения к Supabase:', error.message);
         } else {
@@ -54,6 +52,13 @@ export default function App() {
     }
   };
 
+  const handleUpdateProxies = (projectId: string, proxies: Proxy[]) => {
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, proxies } : p));
+    if (selectedProject?.id === projectId) {
+      setSelectedProject(prev => prev ? { ...prev, proxies } : null);
+    }
+  };
+
   const handleAddTransaction = (projectId: string, transaction: Transaction) => {
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, transactions: [transaction, ...p.transactions] } : p));
     if (selectedProject?.id === projectId) {
@@ -61,7 +66,6 @@ export default function App() {
     }
   };
 
-  // For global finance view, we might want all transactions from all projects
   const allTransactions = projects.flatMap(p => p.transactions);
   const allTasks = projects.flatMap(p => p.tasks);
 
@@ -91,10 +95,6 @@ export default function App() {
           />
         );
       case 'backlog':
-        // If a project is selected, show its tasks, otherwise maybe show all?
-        // Let's assume for now it shows tasks of the first project if none selected, or all tasks.
-        // User said "Kanban", usually it's per project. 
-        // Let's make it show all tasks for now or first project's tasks.
         return (
           <KanbanBoard 
             tasks={selectedProject ? selectedProject.tasks : allTasks} 
@@ -102,8 +102,6 @@ export default function App() {
               if (selectedProject) {
                 handleUpdateTasks(selectedProject.id, tasks);
               } else if (projects.length > 0) {
-                // Update tasks for the project they belong to
-                // This is a bit complex for global view, so let's stick to first project or selected
                 const projId = projects[0].id;
                 handleUpdateTasks(projId, tasks);
               }
@@ -155,16 +153,6 @@ export default function App() {
         }
         @keyframes spin-slow {
           from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow {
-          animation: spin-slow 12s linear infinite;
-        }
-      `}</style>
-    </div>
-  );
-}
-deg); }
           to { transform: rotate(360deg); }
         }
         .animate-spin-slow {
