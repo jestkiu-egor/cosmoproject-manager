@@ -32,7 +32,7 @@ export const Sidebar = ({ activeTab, setActiveTab }: SidebarProps) => {
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(79,70,229,0.5)]">
               <LayoutDashboard className="w-5 h-5 text-white" />
             </div>
-            <span className="font-bold text-xl text-white tracking-tight">Cosmo</span>
+            <span className="font-bold text-xl text-white tracking-tight">Управление проектами 2code</span>
           </motion.div>
         )}
         <button
