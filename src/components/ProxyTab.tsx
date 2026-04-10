@@ -42,9 +42,21 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   }, [project.id]);
 
   const saveApiKey = async () => {
+    if (!apiKey.trim()) {
+      alert('Пожалуйста, введите ключ');
+      return;
+    }
     setIsLoading(true);
-    await db.saveSetting(project.id, 'px6_api_key', apiKey);
-    setIsLoading(false);
+    try {
+      await db.saveSetting(project.id, 'px6_api_key', apiKey);
+      alert('✅ API Ключ успешно сохранен в базу');
+      // После сохранения ключа сразу пробуем загрузить прокси
+      fetchProxyInfo();
+    } catch (err) {
+      alert('❌ Ошибка при сохранении ключа');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getDaysLeft = (dateStr: Date | string) => {
@@ -62,23 +74,32 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const fetchProxyInfo = async () => {
     if (!apiKey) return;
     setIsLoading(true);
+    console.log('🚀 Начинаю загрузку прокси с px6.me...');
     try {
       const proxyUrl = 'https://corsproxy.io/?';
       const apiUrl = encodeURIComponent(`https://api.px6.me/v1/user/proxies?api_key=${apiKey}`);
       
       const response = await fetch(proxyUrl + apiUrl);
       const data = await response.json();
+      
+      console.log('📦 Ответ от px6.me:', data);
 
-      if (data.status === 'success' && data.proxies) {
+      if (data.status === 'success' && (data.proxies || data.list)) {
+        const rawList = data.proxies || data.list || [];
         const fetchedProxies: Proxy[] = [];
         
-        for (const p of data.proxies) {
+        for (const p of rawList) {
+          const exists = (project.proxies || []).some(existing => 
+            existing.ip === p.ip && existing.port === (p.port_http || p.port).toString()
+          );
+          if (exists) continue;
+
           const proxyData: Partial<Proxy> = {
             ip: p.ip,
-            port: p.port_http.toString(),
+            port: (p.port_http || p.port).toString(),
             login: p.login,
             passwordHash: p.password,
-            type: p.type.toUpperCase() as any,
+            type: (p.type?.toUpperCase() || 'HTTPS') as any,
             ipv6: p.ip_v6,
             expiresAt: new Date(p.date_end * 1000),
           };
@@ -98,10 +119,18 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
           }
         }
 
-        onUpdateProxies([...project.proxies, ...fetchedProxies]);
+        if (fetchedProxies.length > 0) {
+          onUpdateProxies([...(project.proxies || []), ...fetchedProxies]);
+          alert(`✅ Подгружено новых прокси: ${fetchedProxies.length}`);
+        } else {
+          alert('Новых прокси не найдено или они уже есть в списке');
+        }
+      } else {
+        alert(`Ошибка API: ${data.message || 'Неверный формат ответа'}`);
       }
     } catch (error) {
       console.error('Ошибка API px6.me:', error);
+      alert('Произошла ошибка при запросе к API. Проверьте консоль браузера.');
     } finally {
       setIsLoading(false);
     }
@@ -121,7 +150,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
       
       const created = await db.addProxy(project.id, proxyData);
       if (created) {
-        onUpdateProxies([...project.proxies, {
+        onUpdateProxies([...(project.proxies || []), {
           id: created.id,
           ip: created.ip,
           port: created.port,
@@ -141,7 +170,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const handleDeleteProxy = async (id: string) => {
     if (window.confirm('Удалить этот прокси из базы?')) {
       await db.deleteProxy(id);
-      onUpdateProxies(project.proxies.filter(p => p.id !== id));
+      onUpdateProxies((project.proxies || []).filter(p => p.id !== id));
     }
   };
 
@@ -181,10 +210,11 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
           />
           <button 
             onClick={saveApiKey}
-            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2"
+            disabled={isLoading}
+            className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 flex items-center gap-2 disabled:opacity-50"
           >
             <Save size={18} />
-            Сохранить
+            {isLoading ? 'Загрузка...' : 'Сохранить'}
           </button>
         </div>
       </div>
@@ -252,7 +282,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
       )}
 
       <div className="grid grid-cols-1 gap-4">
-        {project.proxies.length > 0 ? (
+        {(project.proxies || []).length > 0 ? (
           project.proxies.map((proxy) => (
             <div key={proxy.id} className="bg-slate-900/40 border border-white/10 p-6 rounded-3xl backdrop-blur-xl flex flex-wrap items-center justify-between gap-6 group hover:border-indigo-500/30 transition-all">
               <div className="flex items-center gap-6 min-w-[300px]">

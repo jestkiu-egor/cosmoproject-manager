@@ -105,9 +105,9 @@ export const db = {
       .select('setting_value')
       .eq('project_id', projectId)
       .eq('setting_key', key)
-      .single();
+      .maybeSingle();
 
-    if (error && error.code !== 'PGRST116') console.error('Ошибка получения настройки:', error);
+    if (error) console.error('Ошибка получения настройки:', error);
     return data?.setting_value || null;
   }
 };
