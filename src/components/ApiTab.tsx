@@ -92,26 +92,29 @@ export const ApiTab = ({ project, onUpdateApiKeys }: ApiTabProps) => {
           },
           body: JSON.stringify({
             model: "llama3-8b-8192",
-            messages: [{ role: "user", content: "Say ok" }],
-            max_tokens: 10
+            messages: [{ role: "user", content: "Say only 'ok' word" }],
+            max_tokens: 5,
+            temperature: 0
           })
         });
 
+        const result = await response.json();
+
         if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          throw new Error(errBody.error?.message || `Status ${response.status}`);
+          const errMsg = result.error?.message || result.error?.type || `HTTP ${response.status}`;
+          await db.updateKeyStatus(k.id, 'error', `Ошибка API: ${errMsg}`);
+          continue;
         }
 
-        const result = await response.json();
-        const content = result.choices?.[0]?.message?.content?.toLowerCase() || '';
+        const content = result.choices?.[0]?.message?.content?.toLowerCase().trim() || '';
         
         if (content.includes('ok') || content.includes('ок')) {
           await db.updateKeyStatus(k.id, 'ok');
         } else {
-          await db.updateKeyStatus(k.id, 'error', `Неожиданный ответ: ${content}`);
+          await db.updateKeyStatus(k.id, 'error', `Неверный ответ нейросети: "${content}" (ожидалось 'ok')`);
         }
       } catch (err: any) {
-        await db.updateKeyStatus(k.id, 'error', err.message);
+        await db.updateKeyStatus(k.id, 'error', `Ошибка сети/запроса: ${err.message}`);
       }
     }
     
@@ -232,7 +235,7 @@ export const ApiTab = ({ project, onUpdateApiKeys }: ApiTabProps) => {
           const catKeys = filteredKeys.filter(k => k.name === cat);
           const isExpanded = expandedCategories.includes(cat);
           const errorCount = catKeys.filter(k => (k as any).last_status === 'error').length;
-          const okCount = catKeys.filter(k => (k as any).last_status === 'ok').length;
+          const totalCount = catKeys.length;
 
           if (catKeys.length === 0 && !searchTerm) return null;
 
@@ -247,14 +250,18 @@ export const ApiTab = ({ project, onUpdateApiKeys }: ApiTabProps) => {
                     <ChevronDown size={20} className="text-slate-500" />
                   </div>
                   <h3 className="font-bold text-white tracking-wide">{cat}</h3>
-                  <span className="px-2 py-0.5 bg-white/5 text-slate-500 text-[10px] font-bold rounded-lg border border-white/5">
-                    {catKeys.length} ключей
+                  {/* Статистика в формате Всего / Ошибки */}
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-xs font-bold border transition-all",
+                    errorCount > 0 ? "bg-rose-500/10 text-rose-400 border-rose-500/20" : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                  )}>
+                    {totalCount} / {errorCount}
                   </span>
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="flex gap-2">
-                    {okCount > 0 && <div className="flex items-center gap-1.5 px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[10px] font-bold rounded-full border border-emerald-500/20">{okCount} OK</div>}
-                    {errorCount > 0 && <div className="flex items-center gap-1.5 px-2 py-0.5 bg-rose-500/10 text-rose-500 text-[10px] font-bold rounded-full border border-rose-500/20">{errorCount} ERR</div>}
+                    {totalCount - errorCount > 0 && <div className="text-[10px] text-emerald-500/60 font-bold uppercase tracking-widest">Online</div>}
+                    {errorCount > 0 && <div className="text-[10px] text-rose-500/60 font-bold uppercase tracking-widest">Issues</div>}
                   </div>
                 </div>
               </button>
@@ -310,7 +317,9 @@ export const ApiTab = ({ project, onUpdateApiKeys }: ApiTabProps) => {
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-8 shadow-2xl">
-              <h2 className="text-2xl font-bold text-white mb-6">Новый ключ</h2>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-white">Новый ключ</h2>
+              </div>
               <form onSubmit={async (e) => { e.preventDefault(); await db.addApiKey(project.id, { name: newKey.name, key: newKey.key, usageLocation: newKey.usageLocation }); loadKeys(); setIsModalOpen(false); }} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Модуль</label>
@@ -358,10 +367,10 @@ export const ApiTab = ({ project, onUpdateApiKeys }: ApiTabProps) => {
                 {keyLogs.map((log, i) => (
                   <div key={i} className="bg-white/[0.02] border border-white/5 p-4 rounded-2xl">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-rose-400 text-[10px] font-bold uppercase tracking-widest">Ошибка</span>
+                      <span className="text-rose-400 text-[10px] font-bold uppercase">Ошибка</span>
                       <span className="text-slate-600 text-[10px] font-mono">{format(new Date(log.created_at), 'dd.MM.yy HH:mm:ss')}</span>
                     </div>
-                    <p className="text-slate-300 text-sm font-mono bg-black/20 p-2 rounded-lg border border-white/5">{log.error_message}</p>
+                    <p className="text-slate-300 text-sm font-mono bg-black/20 p-2 rounded-lg border border-white/5 whitespace-pre-wrap">{log.error_message}</p>
                   </div>
                 ))}
                 {keyLogs.length === 0 && <p className="text-center text-slate-600 py-10 uppercase text-xs font-bold tracking-widest">Ошибок не найдено</p>}
