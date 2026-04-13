@@ -21,6 +21,9 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
     { id: 'home', label: 'Главная', icon: Home },
     { id: 'finance', label: 'Финансы', icon: Wallet },
     { id: 'backlog', label: 'Задачи', icon: ListTodo },
+  ];
+
+  const integrationItems = [
     { id: 'assistant', label: 'Ассистент', icon: Bot },
   ];
 
@@ -149,6 +152,51 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
                   </motion.div>
                 )}
               </AnimatePresence>
+            </div>
+          );
+        })}
+      </nav>
+
+      {!isCollapsed && (
+        <div className="px-3 pt-2">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Интеграции</span>
+        </div>
+      )}
+
+      <nav className="flex-1 px-3 py-2 flex flex-col gap-1">
+        {integrationItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          const isAssistant = item.id === 'assistant';
+
+          return (
+            <div key={item.id}>
+              <button
+                onClick={isAssistant ? () => { if (onOpenAssistant) onOpenAssistant(); setActiveTab(item.id); } : () => setActiveTab(item.id)}
+                className={cn(
+                  "w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-300 group relative",
+                  isActive 
+                    ? "bg-purple-600/20 text-purple-400 border border-purple-500/30" 
+                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <Icon size={20} className={cn("transition-transform duration-300", isActive && "scale-110")} />
+                {!isCollapsed && (
+                  <motion.span
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="font-medium flex-1 text-left"
+                  >
+                    {item.label}
+                  </motion.span>
+                )}
+                {isActive && (
+                  <motion.div
+                    layoutId="active-pill"
+                    className="absolute left-0 w-1 h-5 bg-purple-500 rounded-r-full"
+                  />
+                )}
+              </button>
             </div>
           );
         })}
