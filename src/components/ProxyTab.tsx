@@ -20,6 +20,8 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/db';
 
+/* Version: 1.0.2 - Force Rebuild for CORS Fix */
+
 interface ProxyTabProps {
   project: Project;
   onUpdateProxies: (proxies: Proxy[]) => void;
@@ -65,6 +67,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const silentUpdate = async (key: string) => {
     try {
       const targetUrl = `https://px6.link/api/${key}/getproxy?_t=${Date.now()}`;
+      // ВСЕГДА ИСПОЛЬЗУЕМ ALLORIGINS
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
       const response = await fetch(proxyUrl);
       const data = await response.json();
@@ -112,6 +115,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
     console.log('🚀 Синхронизация прокси через AllOrigins...');
     try {
       const targetUrl = `https://px6.link/api/${apiKey}/getproxy?_t=${Date.now()}`;
+      // ВСЕГДА ИСПОЛЬЗУЕМ ALLORIGINS
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
       
       const response = await fetch(proxyUrl);
@@ -149,6 +153,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
               type: (p.type === 'socks' ? 'SOCKS5' : 'HTTPS') as any,
               expiresAt: expirationDate,
             });
+            addedCount++;
           }
         }
 
@@ -162,7 +167,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
       }
     } catch (error: any) {
       console.error(error);
-      alert(`Ошибка синхронизации: ${error.message}. Попробуйте обновить страницу.`);
+      alert(`Ошибка синхронизации: ${error.message}.`);
     } finally {
       setIsLoading(false);
     }
@@ -347,7 +352,7 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
                           onClick={() => {handleCopy(fullString, 'all'); setCopiedId(`all-${proxy.id}`);}}
                           className={cn(
                             "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all border",
-                            copiedId?.startsWith('all') ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" : "bg-white/5 border-white/10 text-slate-500 hover:text-white hover:bg-indigo-600 hover:border-indigo-500"
+                            copiedId?.startsWith('all') ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" : "bg-white/5 border-white/5 text-slate-500 hover:text-white hover:bg-indigo-600 hover:border-indigo-500"
                           )}
                         >
                           {copiedId?.startsWith('all') ? <ClipboardCheck size={14} /> : <Copy size={14} />}
