@@ -20,7 +20,7 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/db';
 
-/* Version: 1.0.2 - Force Rebuild for CORS Fix */
+/* Version: 1.0.5 - Absolute AllOrigins Fix */
 
 interface ProxyTabProps {
   project: Project;
@@ -67,7 +67,6 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const silentUpdate = async (key: string) => {
     try {
       const targetUrl = `https://px6.link/api/${key}/getproxy?_t=${Date.now()}`;
-      // ВСЕГДА ИСПОЛЬЗУЕМ ALLORIGINS
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
       const response = await fetch(proxyUrl);
       const data = await response.json();
@@ -112,10 +111,8 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
   const fetchProxyInfo = async () => {
     if (!apiKey) return;
     setIsLoading(true);
-    console.log('🚀 Синхронизация прокси через AllOrigins...');
     try {
       const targetUrl = `https://px6.link/api/${apiKey}/getproxy?_t=${Date.now()}`;
-      // ВСЕГДА ИСПОЛЬЗУЕМ ALLORIGINS
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
       
       const response = await fetch(proxyUrl);
@@ -128,9 +125,6 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
         setCurrency(data.currency);
         
         const rawList = Object.values(data.list);
-        let updatedCount = 0;
-        let addedCount = 0;
-        
         const currentProjects = await db.fetchProjects();
         const currentProject = currentProjects.find(p => p.id === project.id);
         const currentProxies = currentProject?.proxies || [];
@@ -143,7 +137,6 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
 
           if (existing) {
             await db.updateProxy(existing.id, { expiresAt: expirationDate });
-            updatedCount++;
           } else {
             await db.addProxy(project.id, {
               ip: ipAddr,
@@ -153,15 +146,13 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
               type: (p.type === 'socks' ? 'SOCKS5' : 'HTTPS') as any,
               expiresAt: expirationDate,
             });
-            addedCount++;
           }
         }
 
         const refreshed = await db.fetchProjects();
         const refreshedProj = refreshed.find(p => p.id === project.id);
         if (refreshedProj) onUpdateProxies(refreshedProj.proxies);
-        
-        alert(`✅ Успешно!\nБаланс: ${data.balance} ${data.currency}\nОбновлено: ${updatedCount}\nДобавлено: ${addedCount}`);
+        alert(`✅ Успешно!\nБаланс: ${data.balance} ${data.currency}`);
       } else {
         alert(`Ошибка API: ${data.error || 'Неверный ответ'}`);
       }
@@ -217,7 +208,6 @@ export const ProxyTab = ({ project, onUpdateProxies }: ProxyTabProps) => {
           </div>
           
           <div className="flex flex-wrap items-center gap-4">
-            {/* ВИДЖЕТ БАЛАНСА - ТЕПЕРЬ ВИДЕН ВСЕГДА */}
             <div className="bg-emerald-500/10 border border-emerald-500/20 px-6 py-3 rounded-2xl flex items-center gap-4 shadow-lg shadow-emerald-500/5 min-w-[180px]">
               <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400">
                 {isLoading ? <RefreshCw size={20} className="animate-spin" /> : <Coins size={20} />}
