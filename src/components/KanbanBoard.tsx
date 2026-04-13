@@ -1,25 +1,5 @@
 import { useState, useMemo } from 'react';
-import {
-  DndContext,
-  DragOverlay,
-  closestCorners,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragStartEvent,
-  DragEndEvent,
-  useDroppable,
-  useDraggable,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-  horizontalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, 
@@ -27,11 +7,9 @@ import {
   MessageSquare,
   X,
   ExternalLink,
-  Folder,
   GripVertical,
   Sparkles,
   Trash2,
-  Check,
   LayoutGrid,
   List,
   Search,
@@ -43,7 +21,9 @@ import { Task, TaskStatus, Project } from '../types';
 import { format, isPast } from 'date-fns';
 import { cn } from '../lib/utils';
 import { VoiceInput } from '../lib/VoiceInput';
-import { parseTaskWithAI } from '../lib/groq';
+import { parseTaskWithLLM } from '../lib/llm';
+import { supabase } from '../lib/supabase';
+import { AssistantSettings } from '../types';
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -71,9 +51,10 @@ interface TaskModalProps {
   columns: Column[];
   onClose: () => void;
   onUpdate: (task: Task) => void;
+  onDelete: (taskId: string) => void;
 }
 
-function TaskModal({ task, columns, onClose, onUpdate }: TaskModalProps) {
+function TaskModal({ task, columns, onClose, onUpdate, onDelete }: TaskModalProps) {
   const [editedTask, setEditedTask] = useState(task);
   const column = columns.find(c => c.id === task.status);
 
@@ -102,9 +83,18 @@ function TaskModal({ task, columns, onClose, onUpdate }: TaskModalProps) {
             <div className={cn("w-3 h-3 rounded-full", column?.color)} />
             <span className="text-slate-400 text-sm">{column?.label}</span>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-xl text-slate-400">
-            <X size={20} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => onDelete(task.id)}
+              className="p-2 hover:bg-red-500/20 rounded-xl text-red-400"
+              title="Удалить задачу"
+            >
+              <Trash2 size={20} />
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-xl text-slate-400">
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
@@ -182,149 +172,104 @@ function TaskModal({ task, columns, onClose, onUpdate }: TaskModalProps) {
   );
 }
 
-function TaskCard({ task, column }: { task: Task; column: Column }) {
+function TaskCard({ task, column, index }: { task: Task; column: Column; index: number }) {
   const isOverdue = task.dueDate && isPast(new Date(task.dueDate)) && task.status !== 'done';
   
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      whileHover={{ y: -2 }}
-      className="bg-slate-900/60 border border-white/10 p-4 rounded-xl hover:border-indigo-500/30 transition-all cursor-pointer"
-    >
-      <div className="flex items-center justify-between mb-2">
-        {task.amount ? (
-          <span className="text-indigo-400 font-bold text-sm">
-            {task.amount.toLocaleString()} ₽
-          </span>
-        ) : (
-          <span className="text-slate-500 text-xs">Без суммы</span>
-        )}
-      </div>
-      
-      <h4 className="text-white font-medium text-sm mb-3">{task.title}</h4>
-      
-      <div className="flex items-center justify-between text-xs text-slate-500">
-        <div className="flex items-center gap-2">
-          <Clock size={12} />
-          <span className={cn(isOverdue && "text-red-400 font-bold")}>
-            {task.dueDate ? format(new Date(task.dueDate), 'dd.MM') : '-'}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {task.comments.length > 0 && (
-            <span className="flex items-center gap-1">
-              <MessageSquare size={12} />
-              {task.comments.length}
-            </span>
+    <Draggable draggableId={task.id} index={index}>
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          {...provided.dragHandleProps}
+          className={cn(
+            "bg-slate-900/60 border border-white/10 p-4 rounded-xl transition-all cursor-grab",
+            snapshot.isDragging && "opacity-50 border-indigo-500/50 shadow-lg scale-105 z-50"
           )}
-          {task.externalUrl && (
-            <a href={task.externalUrl} target="_blank" rel="noreferrer" 
-              className="text-indigo-400 hover:text-indigo-300"
-              onClick={(e) => e.stopPropagation()}>
-              <ExternalLink size={12} />
-            </a>
-          )}
+        >
+          <div className="flex items-center justify-between mb-2">
+            {task.amount ? (
+              <span className="text-indigo-400 font-bold text-sm">
+                {task.amount.toLocaleString()} ₽
+              </span>
+            ) : (
+              <span className="text-slate-500 text-xs">Без суммы</span>
+            )}
+          </div>
+          
+          <h4 className="text-white font-medium text-sm mb-3">{task.title}</h4>
+          
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <div className="flex items-center gap-2">
+              <Clock size={12} />
+              <span className={cn(isOverdue && "text-red-400 font-bold")}>
+                {task.dueDate ? format(new Date(task.dueDate), 'dd.MM') : '-'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {task.comments.length > 0 && (
+                <span className="flex items-center gap-1">
+                  <MessageSquare size={12} />
+                  {task.comments.length}
+                </span>
+              )}
+              {task.externalUrl && (
+                <a href={task.externalUrl} target="_blank" rel="noreferrer" 
+                  className="text-indigo-400 hover:text-indigo-300"
+                  onClick={(e) => e.stopPropagation()}>
+                  <ExternalLink size={12} />
+                </a>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-    </motion.div>
+      )}
+    </Draggable>
   );
 }
 
-function SortableTaskCard({ task, column, onClick }: { task: Task; column: Column; onClick: () => void }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id, data: { type: 'task' } });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition: transition || 'transform 150ms ease',
-  };
-
-  return (
-    <motion.div
-      ref={setNodeRef}
-      style={style}
-      layout
-      initial={false}
-      animate={isDragging 
-        ? { opacity: 0.5, scale: 1.02, boxShadow: "0 10px 40px rgba(99, 102, 241, 0.3)" } 
-        : { opacity: 1, scale: 1, boxShadow: "none" }}
-      className={cn(isDragging && "z-50 cursor-grabbing")}
-      {...attributes}
-      {...listeners}
-    >
-      <div onClick={(e) => { e.stopPropagation(); onClick(); }}>
-        <TaskCard task={task} column={column} />
-      </div>
-    </motion.div>
-  );
-}
-
-function SortableColumn({ column, tasks, onEdit, onDelete, onAddTask, onTaskClick, onDragOver, onDragLeave, isOver }: { 
+function ColumnComponent({ column, tasks, onEdit, onDelete, onAddTask, onTaskClick }: { 
   column: Column; 
   tasks: Task[];
   onEdit: (newLabel: string) => void;
   onDelete: () => void;
   onAddTask: () => void;
   onTaskClick: (task: Task) => void;
-  onDragOver?: () => void;
-  onDragLeave?: () => void;
-  isOver?: boolean;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: `column-${column.id}`, data: { type: 'column' } });
+  const totalAmount = tasks.reduce((sum, t) => sum + (t.amount || 0), 0);
+  const [isEditing, setIsEditing] = useState(false);
+  const [value, setValue] = useState(column.label);
 
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition: transition || 'transform 150ms ease',
+  const handleSave = () => {
+    if (value.trim()) {
+      onEdit(value.trim());
+    }
+    setIsEditing(false);
   };
 
-  const totalAmount = tasks.reduce((sum, t) => sum + (t.amount || 0), 0);
-
   return (
-    <motion.div 
-      ref={setNodeRef}
-      style={style}
-      layout
-      animate={isDragging ? { scale: 1.02, boxShadow: "0 20px 60px rgba(0,0,0,0.4)" } : { scale: 1, boxShadow: "none" }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      className={cn(
-        "flex-shrink-0 w-72 flex flex-col bg-white/[0.02] rounded-2xl p-3 border transition-colors",
-        isDragging ? "z-50 opacity-90 border-indigo-500/50 cursor-grabbing" : "border-white/[0.05]",
-        isOver && "border-indigo-500/50 bg-indigo-500/5"
-      )}
-    >
-      <div className="flex items-center justify-between px-2">
+    <div className="flex-shrink-0 w-72 flex flex-col bg-white/[0.02] rounded-2xl p-3 border border-white/[0.05]">
+      <div className="flex items-center justify-between px-2 mb-2">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <div 
-            {...attributes} 
-            {...listeners} 
-            className="cursor-grab active:cursor-grabbing p-1 text-slate-600 hover:text-slate-400 touch-none select-none"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVertical size={14} />
-          </div>
+          <GripVertical size={14} className="text-slate-600 cursor-grab" />
           <div className={cn("w-2 h-2 rounded-full", column.color)} />
-          <ColumnNameEditor 
-            label={column.label} 
-            onSave={onEdit} 
-          />
+          {isEditing ? (
+            <input
+              autoFocus
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onBlur={handleSave}
+              onKeyDown={(e) => e.key === 'Enter' && handleSave()}
+              className="bg-transparent border-b border-indigo-500 text-white text-xs font-bold outline-none w-24"
+            />
+          ) : (
+            <span 
+              onClick={() => { setIsEditing(true); setValue(column.label); }}
+              className="text-white text-xs font-bold cursor-pointer hover:text-indigo-400"
+            >
+              {column.label}
+            </span>
+          )}
           <span className="text-slate-500 text-xs bg-white/5 px-2 py-0.5 rounded-full">
             {tasks.length}
           </span>
@@ -345,27 +290,30 @@ function SortableColumn({ column, tasks, onEdit, onDelete, onAddTask, onTaskClic
         </div>
       </div>
       {totalAmount > 0 && (
-        <div className="px-2 text-sm text-indigo-400 font-bold mt-1">
+        <div className="px-2 py-2 text-center text-base text-indigo-400 font-bold mt-1 mb-2 bg-indigo-500/10 rounded-lg mx-1">
           {totalAmount.toLocaleString()} ₽
         </div>
       )}
-      <div className="flex-1 min-h-[100px] pt-3">
-        <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
-          <div className="space-y-2">
-            <AnimatePresence>
-              {tasks.map((task) => (
-                <SortableTaskCard
-                  key={task.id}
-                  task={task}
-                  column={column}
-                  onClick={() => onTaskClick(task)}
-                />
-              ))}
-            </AnimatePresence>
+      <Droppable droppableId={column.id} type="TASK">
+        {(provided, snapshot) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className={cn(
+              "flex-1 min-h-[100px] space-y-2 pt-2",
+              snapshot.isDraggingOver && "bg-indigo-500/5 rounded-lg"
+            )}
+          >
+            {tasks.map((task, index) => (
+              <div key={task.id} onClick={() => onTaskClick(task)}>
+                <TaskCard task={task} column={column} index={index} />
+              </div>
+            ))}
+            {provided.placeholder}
           </div>
-        </SortableContext>
-      </div>
-    </motion.div>
+        )}
+      </Droppable>
+    </div>
   );
 }
 
@@ -381,30 +329,22 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
   const [newTaskAmount, setNewTaskAmount] = useState('');
   const [newTaskLink, setNewTaskLink] = useState('');
   const [newTaskDescription, setNewTaskDescription] = useState('');
-  const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [deleteConfirmColumn, setDeleteConfirmColumn] = useState<string | null>(null);
   const [view, setView] = useState<'kanban' | 'list'>('kanban');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'title' | 'priority' | 'status' | 'date'>('title');
+  const [sortBy, setSortBy] = useState<'title' | 'priority' | 'status' | 'date' | 'amount'>('title');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [overColumnId, setOverColumnId] = useState<string | null>(null);
   const [kanbanSearchQuery, setKanbanSearchQuery] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [aiText, setAiText] = useState('');
   const [aiModalOpen, setAiModalOpen] = useState(false);
   const [aiInputText, setAiInputText] = useState('');
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 3,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
+  
+  // Filters for list view
+  const [filterDate, setFilterDate] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterPayment, setFilterPayment] = useState<string>('all');
 
   const currentProject = projects.find(p => p.id === selectedProjectId);
   const filteredTasks = selectedProjectId 
@@ -420,6 +360,24 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
         t.title.toLowerCase().includes(query) ||
         t.description?.toLowerCase().includes(query)
       );
+    }
+
+    // Filter by date (due date)
+    if (filterDate) {
+      const filterDateTime = new Date(filterDate).getTime();
+      result = result.filter(t => !t.dueDate || new Date(t.dueDate).getTime() === filterDateTime);
+    }
+
+    // Filter by status
+    if (filterStatus !== 'all') {
+      result = result.filter(t => t.status === filterStatus);
+    }
+
+    // Filter by payment
+    if (filterPayment === 'paid') {
+      result = result.filter(t => t.isPaid);
+    } else if (filterPayment === 'unpaid') {
+      result = result.filter(t => !t.isPaid);
     }
 
     result.sort((a, b) => {
@@ -440,12 +398,15 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
           const dateB = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
           comparison = dateA - dateB;
           break;
+        case 'amount':
+          comparison = (a.amount || 0) - (b.amount || 0);
+          break;
       }
       return sortDir === 'asc' ? comparison : -comparison;
     });
 
     return result;
-  }, [filteredTasks, searchQuery, sortBy, sortDir]);
+  }, [filteredTasks, searchQuery, sortBy, sortDir, filterDate, filterStatus, filterPayment]);
 
   const handleSort = (column: typeof sortBy) => {
     if (sortBy === column) {
@@ -461,61 +422,71 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
     return sortDir === 'asc' ? <ArrowUp size={14} className="text-indigo-400" /> : <ArrowDown size={14} className="text-indigo-400" />;
   };
 
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveId(event.active.id as string);
-  };
+  const listTotalAmount = sortedAndFilteredTasks.reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveId(null);
-    setOverColumnId(null);
+  const onDragEnd = (result: DropResult) => {
+    const { source, destination, type, draggableId } = result;
 
-    if (!over) return;
+    if (!destination) return;
 
-    const activeIdStr = active.id as string;
-    
-    if (activeIdStr.startsWith('column-')) {
-      const columnId = activeIdStr.replace('column-', '');
-      const overIdStr = over.id as string;
-      
-      if (overIdStr.startsWith('column-') && columnId !== overIdStr.replace('column-', '')) {
-        const oldIndex = columns.findIndex(c => `column-${c.id}` === activeIdStr);
-        const newIndex = columns.findIndex(c => `column-${c.id}` === overIdStr);
-        
-        if (oldIndex !== -1 && newIndex !== -1) {
-          const newColumns = [...columns];
-          const [removed] = newColumns.splice(oldIndex, 1);
-          newColumns.splice(newIndex, 0, removed);
-          setColumns(newColumns);
-        }
-      }
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    ) {
       return;
     }
 
-    const activeTask = tasks.find(t => t.id === activeIdStr);
-    if (!activeTask) return;
-
-    let newStatus = activeTask.status;
-
-    if (overColumnId) {
-      newStatus = overColumnId;
-    } else {
-      const overIdStr = over.id as string;
-      if (overIdStr.startsWith('column-')) {
-        newStatus = overIdStr.replace('column-', '') as TaskStatus;
-      } else {
-        const overTask = tasks.find(t => t.id === overIdStr);
-        if (overTask) {
-          newStatus = overTask.status;
-        }
-      }
+    // Handle column reordering
+    if (type === 'COLUMN') {
+      const newColumns = Array.from(columns);
+      const [removed] = newColumns.splice(source.index, 1);
+      newColumns.splice(destination.index, 0, removed);
+      setColumns(newColumns);
+      return;
     }
 
-    if (newStatus !== activeTask.status) {
-      const updatedTasks = tasks.map(t => 
-        t.id === activeIdStr ? { ...t, status: newStatus } : t
-      );
+    // Handle task reordering
+    const sourceColumnId = source.droppableId;
+    const destColumnId = destination.droppableId;
+
+    const sourceTasks = filteredTasks.filter(t => t.status === sourceColumnId);
+    const destTasks = sourceColumnId === destColumnId 
+      ? sourceTasks 
+      : filteredTasks.filter(t => t.status === destColumnId);
+
+    if (sourceColumnId === destColumnId) {
+      // Reorder within same column
+      const newTasks = Array.from(sourceTasks);
+      const [removed] = newTasks.splice(source.index, 1);
+      newTasks.splice(destination.index, 0, removed);
+
+      // Update all tasks with new order
+      const updatedTasks = tasks.map(t => {
+        const newTask = newTasks.find(nt => nt.id === t.id);
+        if (newTask) {
+          const newIndex = newTasks.findIndex(nt => nt.id === t.id);
+          return { ...t, order: newIndex };
+        }
+        return t;
+      });
       onUpdateTasks(updatedTasks);
+    } else {
+      // Move to different column
+      const taskToMove = tasks.find(t => t.id === draggableId);
+      if (!taskToMove) return;
+
+      // Remove from source
+      let updatedTasks = tasks.filter(t => t.id !== draggableId);
+
+      // Add to destination at position
+      const destColumnTasks = updatedTasks.filter(t => t.status === destColumnId);
+      const taskWithNewStatus = { ...taskToMove, status: destColumnId as TaskStatus };
+      
+      destColumnTasks.splice(destination.index, 0, taskWithNewStatus);
+      
+      // Rebuild tasks
+      const otherTasks = updatedTasks.filter(t => t.status !== destColumnId);
+      onUpdateTasks([...otherTasks, ...destColumnTasks]);
     }
   };
 
@@ -586,58 +557,84 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
     setSelectedTask(updatedTask);
   };
 
+  const handleDeleteTask = (taskId: string) => {
+    if (confirm('Вы уверены, что хотите удалить эту задачу?')) {
+      const updatedTasks = tasks.filter(t => t.id !== taskId);
+      onUpdateTasks(updatedTasks);
+      setSelectedTask(null);
+    }
+  };
+
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
   };
 
   const handleAICreateTask = async (text: string) => {
-    setIsProcessing(true);
-    setAiModalOpen(false);
+    console.log('AI button clicked, text:', text);
     
+    setIsProcessing(true);
+    
+    let settings: AssistantSettings | null = null;
+    let errorMessage = '';
+    
+    if (supabase) {
+      console.log('Fetching settings from Supabase...');
+      const { data, error } = await supabase
+        .from('assistant_settings')
+        .select('*')
+        .limit(1)
+        .single();
+      
+      if (error) {
+        console.log('Error fetching settings:', error.message);
+        errorMessage = 'Ошибка загрузки настроек ассистента';
+      } else {
+        console.log('Settings fetched:', data);
+        settings = data;
+      }
+    } else {
+      console.log('Supabase not available');
+      errorMessage = 'Supabase не настроен';
+    }
+
+    if (!settings) {
+      alert(errorMessage || 'Ошибка загрузки настроек');
+      setIsProcessing(false);
+      return;
+    }
+
+    if (!settings.proxy_host || !settings.proxy_port) {
+      alert('Прокси не настроен. Перейдите в Настройки → Ассистент и настройте прокси.');
+      setIsProcessing(false);
+      return;
+    }
+
     try {
-      const parsed = await parseTaskWithAI(text);
+      console.log('Calling LLM with settings:', settings);
+      const parsed = await parseTaskWithLLM(text, settings);
+      
+      console.log('Parsed result:', parsed);
       
       if (parsed) {
-        const newTask: Task = {
-          id: Math.random().toString(36).substr(2, 9),
-          title: parsed.title || text.slice(0, 50),
-          description: parsed.description || text,
-          status: 'todo',
-          priority: parsed.priority || 'medium',
-          comments: [],
-          dueDate: parsed.dueDate ? new Date(parsed.dueDate) : undefined,
-          amount: parsed.amount || 0,
-          isPaid: false,
-          isAgreed: false,
-          externalUrl: parsed.externalUrl,
-          assignee: parsed.assignee,
-        };
-        onUpdateTasks([...tasks, newTask]);
+        // Заполняем форму данными из LLM
+        setNewTaskTitle(parsed.title || text.slice(0, 50));
+        setNewTaskDescription(parsed.description || text);
+        setNewTaskAssignee(parsed.assignee || '');
+        setNewTaskDueDate(parsed.dueDate || '');
+        setNewTaskAmount(parsed.amount || 0);
+        
+        // Открываем модалку создания задачи
+        setIsAddTaskModalOpen(true);
       } else {
-        const newTask: Task = {
-          id: Math.random().toString(36).substr(2, 9),
-          title: text.slice(0, 50),
-          description: text,
-          status: 'todo',
-          priority: 'medium',
-          comments: [],
-          dueDate: undefined,
-          amount: 0,
-          isPaid: false,
-          isAgreed: false,
-        };
-        onUpdateTasks([...tasks, newTask]);
+        alert('Ошибка связи с нейронкой. Проверьте настройки прокси и API в Настройки → Ассистент');
       }
     } catch (error) {
       console.error('Error creating AI task:', error);
+      alert('Ошибка связи с нейронкой. Проверьте настройки прокси и API в Настройки → Ассистент');
     } finally {
       setIsProcessing(false);
-      setAiText('');
-      setAiInputText('');
     }
   };
-
-  const activeTask = activeId && !activeId.startsWith('column-') ? tasks.find(t => t.id === activeId) : null;
 
   return (
     <div className="p-6 space-y-6 relative z-10 h-full flex flex-col">
@@ -689,36 +686,59 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
               <span>Задача</span>
             </button>
             <VoiceInput 
-              onTranscript={(text) => setAiText(text)}
-              onFileTranscript={(text) => setAiText(text)}
+              onTranscript={(text) => {
+                setAiText(text);
+                handleAICreateTask(text);
+              }}
+              onFileTranscript={(text) => {
+                setAiText(text);
+                handleAICreateTask(text);
+              }}
               isProcessing={isProcessing}
             />
-            <button
-              onClick={() => {
-                if (aiText) {
-                  handleAICreateTask(aiText);
-                } else {
-                  setAiModalOpen(true);
-                }
-              }}
-              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-medium transition-all text-sm"
-            >
-              <Sparkles size={16} />
-              <span>AI</span>
-            </button>
           </div>
         </div>
 
         {view === 'list' && (
-          <div className="relative">
-            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск задач..."
-              className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-slate-500 outline-none focus:border-indigo-500 transition-colors"
-            />
+          <div className="space-y-4">
+            <div className="relative">
+              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск задач..."
+                className="w-full pl-11 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-slate-500 outline-none focus:border-indigo-500 transition-colors"
+              />
+            </div>
+            <div className="flex gap-3 items-center">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => setFilterDate(e.target.value)}
+                className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500 [color-scheme:dark]"
+                placeholder="Дата"
+              />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500 [&>option]:bg-slate-800 [&>option]:text-white"
+              >
+                <option value="all">Все статусы</option>
+                {columns.map(col => (
+                  <option key={col.id} value={col.id}>{col.label}</option>
+                ))}
+              </select>
+              <select
+                value={filterPayment}
+                onChange={(e) => setFilterPayment(e.target.value)}
+                className="bg-slate-800 border border-white/10 rounded-lg px-3 py-2 text-white text-sm outline-none focus:border-indigo-500 [&>option]:bg-slate-800 [&>option]:text-white"
+              >
+                <option value="all">Все</option>
+                <option value="paid">Оплачено</option>
+                <option value="unpaid">Не оплачено</option>
+              </select>
+            </div>
           </div>
         )}
       </header>
@@ -737,63 +757,52 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
       )}
 
       {view === 'kanban' ? (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCorners}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-        >
-          <div className="flex gap-4 overflow-x-auto pb-4 flex-1 custom-scrollbar">
-            <SortableContext items={columns.map(c => `column-${c.id}`)} strategy={horizontalListSortingStrategy}>
-              {columns.map((column) => {
-                const baseTasks = filteredTasks.filter(t => t.status === column.id);
-                const columnTasks = kanbanSearchQuery 
-                  ? baseTasks.filter(t => 
-                      t.title.toLowerCase().includes(kanbanSearchQuery.toLowerCase()) ||
-                      t.description?.toLowerCase().includes(kanbanSearchQuery.toLowerCase()) ||
-                      t.assignee?.toLowerCase().includes(kanbanSearchQuery.toLowerCase())
-                    )
-                  : baseTasks;
-                return (
-                  <SortableColumn
-                    key={column.id}
-                    column={column}
-                    tasks={columnTasks}
-                    onEdit={(label) => handleEditColumn(column.id, label)}
-                    onDelete={() => handleDeleteColumn(column.id)}
-                    onAddTask={() => {
-                      setNewTaskStatus(column.id);
-                      setIsAddTaskModalOpen(true);
-                    }}
-                    onTaskClick={handleTaskClick}
-                    onDragOver={() => setOverColumnId(column.id)}
-                    onDragLeave={() => setOverColumnId(null)}
-                    isOver={overColumnId === column.id}
-                  />
-                );
-              })}
-            </SortableContext>
-          </div>
-
-          <DragOverlay>
-            {activeId && activeId.startsWith('column-') && (
-              <div className="bg-slate-900/90 border border-indigo-500/50 rounded-2xl p-3 shadow-2xl w-72 opacity-90">
-                <div className="flex items-center gap-2">
-                  <GripVertical size={14} className="text-slate-400" />
-                  <div className={cn("w-2 h-2 rounded-full", columns.find(c => c.id === activeId.replace('column-', ''))?.color)} />
-                  <span className="text-white font-bold uppercase text-xs">
-                    {columns.find(c => c.id === activeId.replace('column-', ''))?.label}
-                  </span>
-                </div>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Droppable droppableId="columns" direction="horizontal" type="COLUMN">
+            {(provided) => (
+              <div 
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className="flex gap-4 overflow-x-auto pb-4 flex-1 custom-scrollbar"
+              >
+                {columns.map((column, index) => {
+                  const baseTasks = filteredTasks.filter(t => t.status === column.id);
+                  const columnTasks = kanbanSearchQuery 
+                    ? baseTasks.filter(t => 
+                        t.title.toLowerCase().includes(kanbanSearchQuery.toLowerCase()) ||
+                        t.description?.toLowerCase().includes(kanbanSearchQuery.toLowerCase()) ||
+                        t.assignee?.toLowerCase().includes(kanbanSearchQuery.toLowerCase())
+                      )
+                    : baseTasks;
+                  return (
+                    <Draggable key={column.id} draggableId={`column-${column.id}`} index={index}>
+                      {(provided) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                        >
+                          <ColumnComponent
+                            column={column}
+                            tasks={columnTasks}
+                            onEdit={(label) => handleEditColumn(column.id, label)}
+                            onDelete={() => handleDeleteColumn(column.id)}
+                            onAddTask={() => {
+                              setNewTaskStatus(column.id);
+                              setIsAddTaskModalOpen(true);
+                            }}
+                            onTaskClick={handleTaskClick}
+                          />
+                        </div>
+                      )}
+                    </Draggable>
+                  );
+                })}
+                {provided.placeholder}
               </div>
             )}
-            {activeTask && (
-              <div className="bg-slate-900/90 border border-indigo-500/50 p-4 rounded-xl shadow-2xl w-72 opacity-90 cursor-grabbing">
-                <h4 className="text-white font-medium text-sm">{activeTask.title}</h4>
-              </div>
-            )}
-          </DragOverlay>
-        </DndContext>
+          </Droppable>
+        </DragDropContext>
       ) : (
         <div className="flex-1 overflow-y-auto custom-scrollbar">
           <div className="bg-white/[0.02] rounded-2xl border border-white/[0.05] overflow-hidden">
@@ -807,8 +816,21 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
               <div className="col-span-2 flex items-center gap-2 cursor-pointer hover:text-white" onClick={() => handleSort('date')}>
                 Дата <SortIcon column="date" />
               </div>
-              <div className="col-span-2 text-right">Сумма</div>
+              <div className="col-span-2 flex items-center justify-end gap-2 cursor-pointer hover:text-white" onClick={() => handleSort('amount')}>
+                Сумма <SortIcon column="amount" />
+              </div>
+              <div className="col-span-1 text-right">Ссылка</div>
+              <div className="col-span-1"></div>
+            </div>
+            <div className="grid grid-cols-12 gap-4 px-4 py-3 border-b border-white/5 bg-indigo-500/10">
+              <div className="col-span-4"></div>
               <div className="col-span-2"></div>
+              <div className="col-span-2"></div>
+              <div className="col-span-2 text-right text-indigo-400 font-bold text-lg">
+                Итого: {listTotalAmount.toLocaleString()} ₽
+              </div>
+              <div className="col-span-1"></div>
+              <div className="col-span-1"></div>
             </div>
             {sortedAndFilteredTasks.length === 0 ? (
               <div className="p-8 text-center text-slate-500">
@@ -837,12 +859,13 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
                         {task.dueDate ? format(new Date(task.dueDate), 'dd.MM.yyyy') : '-'}
                       </span>
                     </div>
-                    <div className="col-span-2 text-right text-indigo-400 font-bold">
-                      {task.amount?.toLocaleString() || 0} ₽
+                    <div className="col-span-2 text-right">
+                      <span className="text-indigo-400 font-bold">{task.amount?.toLocaleString() || 0} ₽</span>
                     </div>
-                    <div className="col-span-2 flex items-center gap-3 text-slate-500">
+                    <div className="col-span-1 flex items-center justify-end gap-2">
+                      {task.isPaid && <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded-full">Оплачено</span>}
                       {task.comments.length > 0 && (
-                        <span className="flex items-center gap-1 text-xs">
+                        <span className="flex items-center gap-1 text-xs text-slate-500">
                           <MessageSquare size={12} />
                           {task.comments.length}
                         </span>
@@ -855,6 +878,7 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
                         </a>
                       )}
                     </div>
+                    <div className="col-span-1"></div>
                   </div>
                 );
               })
@@ -870,6 +894,7 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
             columns={columns}
             onClose={() => setSelectedTask(null)}
             onUpdate={handleUpdateTask}
+            onDelete={handleDeleteTask}
           />
         )}
       </AnimatePresence>
@@ -934,7 +959,7 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
+              className="relative w-full max-w-2xl bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto"
             >
               <div className="flex items-center justify-between mb-6">
                 <h2 className="text-xl font-bold text-white">Новая задача</h2>
@@ -1013,19 +1038,38 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
                   <select
                     value={newTaskStatus}
                     onChange={(e) => setNewTaskStatus(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-800 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 [&>option]:bg-slate-800 [&>option]:text-white"
                   >
                     {columns.map(col => (
                       <option key={col.id} value={col.id}>{col.label}</option>
                     ))}
                   </select>
                 </div>
-                <button
-                  type="submit"
-                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold"
-                >
-                  Создать задачу
-                </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="submit"
+                    className="py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold"
+                  >
+                    Создать вручную
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const clipboardText = await navigator.clipboard.readText();
+                        if (clipboardText.trim()) {
+                          handleAICreateTask(clipboardText);
+                        }
+                      } catch (err) {
+                        console.error('Failed to read clipboard:', err);
+                      }
+                    }}
+                    className="py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+                  >
+                    <Sparkles size={18} />
+                    AI
+                  </button>
+                </div>
               </form>
             </motion.div>
           </div>
@@ -1134,37 +1178,3 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
     </div>
   );
 };
-
-function ColumnNameEditor({ label, onSave }: { label: string; onSave: (label: string) => void }) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [value, setValue] = useState(label);
-
-  const handleSave = () => {
-    if (value.trim()) {
-      onSave(value.trim());
-    }
-    setIsEditing(false);
-  };
-
-  if (isEditing) {
-    return (
-      <input
-        autoFocus
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={handleSave}
-        onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-        className="bg-transparent border-b border-indigo-500 text-white text-xs font-bold uppercase outline-none w-24"
-      />
-    );
-  }
-
-  return (
-    <span 
-      onClick={() => { setIsEditing(true); setValue(label); }}
-      className="text-white text-xs font-bold uppercase cursor-pointer hover:text-indigo-400 transition-colors"
-    >
-      {label}
-    </span>
-  );
-}

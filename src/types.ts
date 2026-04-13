@@ -21,6 +21,7 @@ export interface Task {
   externalUrl?: string;
   assignee?: string;
   files?: string[];
+  order?: number;
 }
 
 export interface Proxy {
@@ -70,4 +71,16 @@ export interface Project {
   tasks: Task[];
   transactions: Transaction[];
   createdAt: Date;
+}
+
+export interface AssistantSettings {
+  id: string;
+  llm_api_url: string;
+  llm_model: string;
+  llm_api_key: string;
+  llm_prompt: string;
+  proxy_host: string;
+  proxy_port: number;
+  proxy_login: string;
+  proxy_password: string;
 }
