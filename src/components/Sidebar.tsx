@@ -13,14 +13,16 @@ interface SidebarProps {
   onOpenAssistant?: () => void;
 }
 
-export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, onSelectProject }: SidebarProps) => {
+export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, onSelectProject, onOpenAssistant }: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
 
   const menuItems = [
     { id: 'home', label: 'Главная', icon: Home },
     { id: 'finance', label: 'Финансы', icon: Wallet },
     { id: 'backlog', label: 'Задачи', icon: ListTodo },
+    { id: 'integrations', label: 'Интеграции', icon: Bot, hasSubmenu: true },
   ];
 
   const integrationItems = [
@@ -33,6 +35,15 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
     } else {
       setActiveTab('backlog');
       setIsProjectsOpen(true);
+    }
+  };
+
+  const handleIntegrationsClick = () => {
+    if (activeTab === 'integrations') {
+      setIsIntegrationsOpen(!isIntegrationsOpen);
+    } else {
+      setActiveTab('integrations');
+      setIsIntegrationsOpen(true);
     }
   };
 
@@ -67,20 +78,24 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           const isBacklog = item.id === 'backlog';
+          const isIntegrations = item.id === 'integrations';
           const isAssistant = item.id === 'assistant';
+          const hasSubmenu = item.hasSubmenu;
 
           return (
             <div key={item.id}>
               <button
-                onClick={isBacklog ? handleBacklogClick : isAssistant ? () => { if (onOpenAssistant) onOpenAssistant(); } : () => { setActiveTab(item.id); setIsProjectsOpen(false); }}
+                onClick={isBacklog ? handleBacklogClick : isIntegrations ? handleIntegrationsClick : () => { setActiveTab(item.id); setIsProjectsOpen(false); setIsIntegrationsOpen(false); }}
                 className={cn(
                   "w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-300 group relative",
                   isActive 
                     ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30" 
+                    : isIntegrations
+                    ? "bg-purple-600/10 text-purple-400 border border-purple-500/20 hover:bg-purple-600/20"
                     : "text-slate-400 hover:text-white hover:bg-white/5"
                 )}
               >
-                <Icon size={20} className={cn("transition-transform duration-300", isActive && "scale-110", isAssistant && "text-purple-400")} />
+                <Icon size={20} className={cn("transition-transform duration-300", isActive && "scale-110")} />
                 {!isCollapsed && (
                   <motion.span
                     initial={{ opacity: 0, x: -10 }}
@@ -90,12 +105,12 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
                     {item.label}
                   </motion.span>
                 )}
-                {!isCollapsed && isBacklog && (
+                {!isCollapsed && (isBacklog || isIntegrations) && (
                   <ChevronDown 
                     size={16} 
                     className={cn(
                       "transition-transform text-slate-500",
-                      isProjectsOpen && "rotate-180"
+                      (isBacklog && isProjectsOpen || isIntegrations && isIntegrationsOpen) && "rotate-180"
                     )} 
                   />
                 )}
@@ -121,13 +136,12 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
                         className={cn(
                           "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
                           !selectedProjectId 
-                            ? "bg-indigo-600/30 text-indigo-400" 
-                            : "text-slate-400 hover:bg-white/5 hover:text-white"
+                            ? "bg-indigo-600/20 text-indigo-400" 
+                            : "text-slate-400 hover:bg-white/5"
                         )}
                       >
                         <Folder size={14} />
                         <span>Все проекты</span>
-                        {!selectedProjectId && <Check size={14} className="ml-auto" />}
                       </button>
                       {projects.map((project) => (
                         <button
@@ -151,52 +165,39 @@ export const Sidebar = ({ activeTab, setActiveTab, projects, selectedProjectId, 
                     </div>
                   </motion.div>
                 )}
-              </AnimatePresence>
-            </div>
-          );
-        })}
-      </nav>
 
-      {!isCollapsed && (
-        <div className="px-3 pt-2">
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Интеграции</span>
-        </div>
-      )}
-
-      <nav className="flex-1 px-3 py-2 flex flex-col gap-1">
-        {integrationItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          const isAssistant = item.id === 'assistant';
-
-          return (
-            <div key={item.id}>
-              <button
-                onClick={isAssistant ? () => { if (onOpenAssistant) onOpenAssistant(); setActiveTab(item.id); } : () => setActiveTab(item.id)}
-                className={cn(
-                  "w-full flex items-center gap-3 p-3 rounded-xl transition-all duration-300 group relative",
-                  isActive 
-                    ? "bg-purple-600/20 text-purple-400 border border-purple-500/30" 
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                )}
-              >
-                <Icon size={20} className={cn("transition-transform duration-300", isActive && "scale-110")} />
-                {!isCollapsed && (
-                  <motion.span
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    className="font-medium flex-1 text-left"
-                  >
-                    {item.label}
-                  </motion.span>
-                )}
-                {isActive && (
+                {isIntegrations && isIntegrationsOpen && !isCollapsed && (
                   <motion.div
-                    layoutId="active-pill"
-                    className="absolute left-0 w-1 h-5 bg-purple-500 rounded-r-full"
-                  />
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden pl-4"
+                  >
+                    <div className="py-2 space-y-1">
+                      {integrationItems.map((subItem) => {
+                        const SubIcon = subItem.icon;
+                        const isSubActive = activeTab === subItem.id;
+                        return (
+                          <button
+                            key={subItem.id}
+                            onClick={() => { setActiveTab(subItem.id); if (onOpenAssistant) onOpenAssistant(); setIsIntegrationsOpen(false); }}
+                            className={cn(
+                              "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all",
+                              isSubActive 
+                                ? "bg-purple-600/20 text-purple-400" 
+                                : "text-slate-400 hover:bg-white/5 hover:text-white"
+                            )}
+                          >
+                            <SubIcon size={14} />
+                            <span>{subItem.label}</span>
+                            {isSubActive && <Check size={14} className="ml-auto" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
                 )}
-              </button>
+              </AnimatePresence>
             </div>
           );
         })}
