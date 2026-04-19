@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { StarField } from './components/StarField';
 import { ProjectList } from './components/ProjectList';
@@ -9,32 +9,166 @@ import { AssistantPage } from './components/AssistantPage';
 import { SAMPLE_PROJECTS } from './constants';
 import { Project, Task, Transaction } from './types';
 import { AnimatePresence, motion } from 'motion/react';
+import { supabase } from './lib/supabase';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
-  const [projects, setProjects] = useState<Project[]>(SAMPLE_PROJECTS);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [taskProjectId, setTaskProjectId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleAddProject = (newProject: Project) => {
-    setProjects(prev => [...prev, newProject]);
+  // Загрузка данных из Supabase
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        setIsLoading(true);
+        console.log('[App] Загрузка проектов из Supabase...');
+        
+        const { data: projectsData, error: projectsError } = await supabase
+          .from('projects')
+          .select('*');
+
+        if (projectsError) throw projectsError;
+        
+        if (projectsData && projectsData.length > 0) {
+          const projectsWithTasks = await Promise.all(projectsData.map(async (p) => {
+            // Загружаем задачи
+            const { data: tasks } = await supabase.from('tasks').select('*').eq('project_id', p.id);
+            
+            // Загружаем прокси и ключи с проверкой на ошибки (если таблиц нет)
+            let proxies: any[] = [];
+            let apiKeys: any[] = [];
+            
+            try {
+              const { data: pData } = await supabase.from('proxies').select('*').eq('project_id', p.id);
+              proxies = pData || [];
+            } catch (e) { console.log('Table proxies not found'); }
+
+            try {
+              const { data: kData } = await supabase.from('api_keys').select('*').eq('project_id', p.id);
+              apiKeys = kData || [];
+            } catch (e) { console.log('Table api_keys not found'); }
+
+            return {
+              ...p,
+              createdAt: p.created_at ? new Date(p.created_at) : new Date(),
+              tasks: (tasks || []).map(t => ({
+                ...t,
+                createdAt: t.created_at ? new Date(t.created_at) : new Date(),
+                dueDate: t.due_date ? new Date(t.due_date) : undefined,
+                comments: t.comments || []
+              })),
+              proxies: (proxies || []).map(pr => ({
+                ...pr,
+                expiresAt: pr.expires_at ? new Date(pr.expires_at) : new Date()
+              })),
+              apiKeys: (apiKeys || []).map(k => ({
+                ...k,
+                expiresAt: k.expires_at ? new Date(k.expires_at) : new Date()
+              })),
+              subscriptions: [],
+              transactions: []
+            };
+          }));
+
+          console.log('[App] Проекты успешно загружены:', projectsWithTasks);
+          setProjects(projectsWithTasks);
+        } else {
+          console.log('[App] В базе нет проектов, показываем демо-данные');
+          setProjects(SAMPLE_PROJECTS);
+        }
+      } catch (err) {
+        console.error('[App] Ошибка Supabase:', err);
+        setProjects(SAMPLE_PROJECTS);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, []);
+
+  const handleAddProject = async (newProject: Project) => {
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([{
+          name: newProject.name,
+          description: newProject.description
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      setProjects(prev => [...prev, { ...newProject, id: data.id }]);
+    } catch (err) {
+      console.error('Ошибка добавления проекта:', err);
+      setProjects(prev => [...prev, newProject]);
+    }
   };
 
-  const handleDeleteProject = (id: string) => {
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (selectedProject?.id === id) setSelectedProject(null);
+  const handleDeleteProject = async (id: string) => {
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', id);
+      if (error) throw error;
+      setProjects(prev => prev.filter(p => p.id !== id));
+      if (selectedProject?.id === id) setSelectedProject(null);
+    } catch (err) {
+      console.error('Ошибка удаления проекта:', err);
+    }
   };
 
-  const handleUpdateProject = (updatedProject: Project) => {
-    setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
-    if (selectedProject?.id === updatedProject.id) setSelectedProject(updatedProject);
+  const handleUpdateProject = async (updatedProject: Project) => {
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({
+          name: updatedProject.name,
+          description: updatedProject.description
+        })
+        .eq('id', updatedProject.id);
+
+      if (error) throw error;
+      setProjects(prev => prev.map(p => p.id === updatedProject.id ? updatedProject : p));
+      if (selectedProject?.id === updatedProject.id) setSelectedProject(updatedProject);
+    } catch (err) {
+      console.error('Ошибка обновления проекта:', err);
+    }
   };
 
-  const handleUpdateTasks = (projectId: string, tasks: Task[]) => {
+  const handleUpdateTasks = async (projectId: string, tasks: Task[]) => {
+    // Обновляем локальное состояние для мгновенного отклика
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, tasks } : p));
     if (selectedProject?.id === projectId) {
       setSelectedProject(prev => prev ? { ...prev, tasks } : null);
+    }
+
+    // Синхронизируем изменения с Supabase
+    // В идеале обновляем только измененную задачу, но для простоты обновляем все переданные
+    // В данном контексте tasks - это весь список задач проекта
+    try {
+      for (const task of tasks) {
+        const { error } = await supabase
+          .from('tasks')
+          .upsert({
+            id: task.id.includes('.') ? undefined : task.id, // Если ID временный (из Math.random), пусть база создаст новый
+            project_id: projectId,
+            title: task.title,
+            description: task.description,
+            amount: task.amount,
+            status: task.status,
+            priority: task.priority,
+            is_paid: task.isPaid,
+            due_date: task.dueDate?.toISOString()
+          })
+          .eq('id', task.id);
+        
+        if (error) console.error('Ошибка сохранения задачи:', error.message);
+      }
+    } catch (err) {
+      console.error('Ошибка синхронизации задач:', err);
     }
   };
 
@@ -56,6 +190,8 @@ export default function App() {
           <ProjectDetail 
             project={selectedProject} 
             onBack={() => setSelectedProject(null)} 
+            onUpdateTasks={(tasks) => handleUpdateTasks(selectedProject.id, tasks)}
+            projects={projects}
           />
         ) : (
           <ProjectList 

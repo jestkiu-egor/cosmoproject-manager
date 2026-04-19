@@ -11,25 +11,30 @@ import {
   Eye, 
   Trash2, 
   MessageSquare,
-  Plus
+  Plus,
+  ListTodo
 } from 'lucide-react';
-import { Project, Proxy, ApiKey, Subscription } from '../types';
+import { Project, Proxy, ApiKey, Subscription, Task } from '../types';
 import { format, differenceInDays } from 'date-fns';
 import { useState } from 'react';
 import { cn } from '../lib/utils';
+import { KanbanBoard } from './KanbanBoard';
 
 interface ProjectDetailProps {
   project: Project;
   onBack: () => void;
+  onUpdateTasks: (tasks: Task[]) => void;
+  projects: Project[];
 }
 
-type TabType = 'overview' | 'proxy' | 'api' | 'subscriptions';
+type TabType = 'overview' | 'tasks' | 'proxy' | 'api' | 'subscriptions';
 
-export const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
+export const ProjectDetail = ({ project, onBack, onUpdateTasks, projects }: ProjectDetailProps) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
   const tabs = [
     { id: 'overview', label: 'Обзор', icon: Globe },
+    { id: 'tasks', label: 'Задачи', icon: ListTodo },
     { id: 'proxy', label: 'PROXY', icon: Globe },
     { id: 'api', label: 'API', icon: Key },
     { id: 'subscriptions', label: 'Подписки', icon: CreditCard },
@@ -131,6 +136,18 @@ export const ProjectDetail = ({ project, onBack }: ProjectDetailProps) => {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'tasks' && (
+            <div className="h-[calc(100vh-280px)]">
+              <KanbanBoard 
+                tasks={project.tasks}
+                projects={projects}
+                selectedProjectId={project.id}
+                onUpdateTasks={onUpdateTasks}
+                onSelectProject={() => {}}
+              />
             </div>
           )}
 

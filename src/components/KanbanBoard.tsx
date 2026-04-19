@@ -98,14 +98,25 @@ function TaskModal({ task, columns, onClose, onUpdate, onDelete }: TaskModalProp
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-          <h2 className="text-2xl font-bold text-white mb-6">{task.title}</h2>
+          <div className="mb-6">
+            <label className="block text-slate-400 text-xs font-bold uppercase mb-2 tracking-widest">Название задачи</label>
+            <input 
+              value={editedTask.title}
+              onChange={(e) => setEditedTask({ ...editedTask, title: e.target.value })}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-xl font-bold outline-none focus:border-indigo-500 transition-all"
+            />
+          </div>
           
-          {task.description && (
-            <div className="mb-6">
-              <h3 className="text-slate-400 text-sm font-bold uppercase mb-2">Описание</h3>
-              <p className="text-slate-300">{task.description}</p>
-            </div>
-          )}
+          <div className="mb-6">
+            <label className="block text-slate-400 text-xs font-bold uppercase mb-2 tracking-widest">Описание</label>
+            <textarea
+              value={editedTask.description || ''}
+              onChange={(e) => setEditedTask({ ...editedTask, description: e.target.value })}
+              placeholder="Детали задачи..."
+              rows={5}
+              className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-slate-300 outline-none focus:border-indigo-500 transition-all resize-none"
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div>
