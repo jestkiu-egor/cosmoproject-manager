@@ -24,12 +24,13 @@ interface ProjectDetailProps {
   project: Project;
   onBack: () => void;
   onUpdateTasks: (tasks: Task[]) => void;
+  onDeleteTask: (taskId: string) => void;
   projects: Project[];
 }
 
 type TabType = 'overview' | 'tasks' | 'proxy' | 'api' | 'subscriptions';
 
-export const ProjectDetail = ({ project, onBack, onUpdateTasks, projects }: ProjectDetailProps) => {
+export const ProjectDetail = ({ project, onBack, onUpdateTasks, onDeleteTask, projects }: ProjectDetailProps) => {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
 
   const tabs = [
@@ -146,6 +147,7 @@ export const ProjectDetail = ({ project, onBack, onUpdateTasks, projects }: Proj
                 projects={projects}
                 selectedProjectId={project.id}
                 onUpdateTasks={onUpdateTasks}
+                onDeleteTask={onDeleteTask}
                 onSelectProject={() => {}}
               />
             </div>

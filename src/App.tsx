@@ -183,6 +183,27 @@ export default function App() {
   const allTransactions = projects.flatMap(p => p.transactions);
   const allTasks = projects.flatMap(p => p.tasks);
 
+  const handleDeleteTask = async (projectId: string, taskId: string) => {
+    try {
+      // Удаляем из базы
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
+      if (error) throw error;
+
+      // Обновляем локально
+      setProjects(prev => prev.map(p => 
+        p.id === projectId ? { ...p, tasks: p.tasks.filter(t => t.id !== taskId) } : p
+      ));
+      if (selectedProject?.id === projectId) {
+        setSelectedProject(prev => prev ? { 
+          ...prev, 
+          tasks: prev.tasks.filter(t => t.id !== taskId) 
+        } : null);
+      }
+    } catch (err) {
+      console.error('Ошибка удаления задачи:', err);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case 'home':
@@ -191,6 +212,7 @@ export default function App() {
             project={selectedProject} 
             onBack={() => setSelectedProject(null)} 
             onUpdateTasks={(tasks) => handleUpdateTasks(selectedProject.id, tasks)}
+            onDeleteTask={(taskId) => handleDeleteTask(selectedProject.id, taskId)}
             projects={projects}
           />
         ) : (
@@ -220,6 +242,11 @@ export default function App() {
               } else if (projects.length > 0) {
                 handleUpdateTasks(projects[0].id, tasks);
               }
+            }}
+            onDeleteTask={(taskId) => {
+              const task = allTasks.find(t => t.id === taskId);
+              const pId = taskProjectId || (projects.length > 0 ? projects[0].id : null);
+              if (pId) handleDeleteTask(pId, taskId);
             }}
             onSelectProject={setTaskProjectId}
           />

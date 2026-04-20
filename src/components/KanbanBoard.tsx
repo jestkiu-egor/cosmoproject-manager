@@ -30,6 +30,7 @@ interface KanbanBoardProps {
   projects: Project[];
   selectedProjectId: string | null;
   onUpdateTasks: (tasks: Task[]) => void;
+  onDeleteTask: (taskId: string) => void;
   onSelectProject: (projectId: string | null) => void;
 }
 
@@ -570,8 +571,7 @@ export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks,
 
   const handleDeleteTask = (taskId: string) => {
     if (confirm('Вы уверены, что хотите удалить эту задачу?')) {
-      const updatedTasks = tasks.filter(t => t.id !== taskId);
-      onUpdateTasks(updatedTasks);
+      onDeleteTask(taskId);
       setSelectedTask(null);
     }
   };
