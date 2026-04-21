@@ -36,6 +36,7 @@ export default function App() {
           const projectsWithTasks = await Promise.all(projectsData.map(async (p) => {
             // Загружаем задачи
             const { data: tasks } = await supabase.from('tasks').select('*').eq('project_id', p.id);
+            const { data: transactions } = await supabase.from('transactions').select('*').eq('project_id', p.id);
             
             // Загружаем прокси и ключи с проверкой на ошибки (если таблиц нет)
             let proxies: any[] = [];
@@ -58,7 +59,13 @@ export default function App() {
                 ...t,
                 createdAt: t.created_at ? new Date(t.created_at) : new Date(),
                 dueDate: t.due_date ? new Date(t.due_date) : undefined,
+                assignee: t.assignee || undefined,
+                externalUrl: t.external_url || undefined,
                 comments: t.comments || []
+              })),
+              transactions: (transactions || []).map((tr: any) => ({
+                ...tr,
+                date: tr.date ? new Date(tr.date) : new Date()
               })),
               proxies: (proxies || []).map(pr => ({
                 ...pr,
@@ -68,8 +75,7 @@ export default function App() {
                 ...k,
                 expiresAt: k.expires_at ? new Date(k.expires_at) : new Date()
               })),
-              subscriptions: [],
-              transactions: []
+              subscriptions: []
             };
           }));
 
@@ -163,7 +169,9 @@ export default function App() {
             status: task.status,
             priority: task.priority,
             is_paid: task.isPaid,
-            due_date: task.dueDate?.toISOString()
+            due_date: task.dueDate?.toISOString(),
+            assignee: task.assignee || null,
+            external_url: task.externalUrl || null
           })
           .select()
           .single();
@@ -188,10 +196,49 @@ export default function App() {
     }
   };
 
-  const handleAddTransaction = (projectId: string, transaction: Transaction) => {
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, transactions: [transaction, ...p.transactions] } : p));
+  const handleAddTransaction = async (projectId: string, transaction: Transaction) => {
+    // Сначала добавляем локально
+    const tempId = `temp_${Date.now()}`;
+    const newTransaction = { ...transaction, id: tempId };
+    
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, transactions: [newTransaction, ...p.transactions] } : p));
     if (selectedProject?.id === projectId) {
-      setSelectedProject(prev => prev ? { ...prev, transactions: [transaction, ...prev.transactions] } : null);
+      setSelectedProject(prev => prev ? { ...prev, transactions: [newTransaction, ...prev.transactions] } : null);
+    }
+
+    // Потом синхронизируем с Supabase
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .insert([{
+          project_id: projectId,
+          name: transaction.name,
+          amount: transaction.amount,
+          transaction_type: transaction.type,
+          category: transaction.category,
+          date: transaction.date.toISOString(),
+          status: transaction.status
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Обновляем локально с реальным ID
+      const realTransaction = { ...newTransaction, id: data.id };
+      setProjects(prev => prev.map(p => 
+        p.id === projectId 
+          ? { ...p, transactions: p.transactions.map(t => t.id === tempId ? realTransaction : t) }
+          : p
+      ));
+      if (selectedProject?.id === projectId) {
+        setSelectedProject(prev => prev ? { 
+          ...prev, 
+          transactions: prev.transactions.map(t => t.id === tempId ? realTransaction : t)
+        } : null);
+      }
+    } catch (err) {
+      console.error('Ошибка сохранения транзакции:', err);
     }
   };
 
