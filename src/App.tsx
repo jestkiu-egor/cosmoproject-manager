@@ -145,15 +145,17 @@ export default function App() {
       setSelectedProject(prev => prev ? { ...prev, tasks } : null);
     }
 
-    // Синхронизируем изменения с Supabase
-    // В идеале обновляем только измененную задачу, но для простоты обновляем все переданные
-    // В данном контексте tasks - это весь список задач проекта
     try {
-      for (const task of tasks) {
-        const { error } = await supabase
+      const updatedTasksWithRealIds = [...tasks];
+
+      for (let i = 0; i < updatedTasksWithRealIds.length; i++) {
+        const task = updatedTasksWithRealIds[i];
+        const isTemporaryId = task.id.includes('.') || task.id.length < 10;
+
+        const { data, error } = await supabase
           .from('tasks')
           .upsert({
-            id: task.id.includes('.') ? undefined : task.id, // Если ID временный (из Math.random), пусть база создаст новый
+            id: isTemporaryId ? undefined : task.id,
             project_id: projectId,
             title: task.title,
             description: task.description,
@@ -163,9 +165,23 @@ export default function App() {
             is_paid: task.isPaid,
             due_date: task.dueDate?.toISOString()
           })
-          .eq('id', task.id);
+          .select()
+          .single();
         
-        if (error) console.error('Ошибка сохранения задачи:', error.message);
+        if (error) {
+          console.error('Ошибка сохранения задачи:', error.message);
+        } else if (data && isTemporaryId) {
+          updatedTasksWithRealIds[i] = {
+            ...task,
+            id: data.id,
+            createdAt: new Date(data.created_at)
+          };
+        }
+      }
+
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, tasks: updatedTasksWithRealIds } : p));
+      if (selectedProject?.id === projectId) {
+        setSelectedProject(prev => prev ? { ...prev, tasks: updatedTasksWithRealIds } : null);
       }
     } catch (err) {
       console.error('Ошибка синхронизации задач:', err);
@@ -185,11 +201,20 @@ export default function App() {
 
   const handleDeleteTask = async (projectId: string, taskId: string) => {
     try {
-      // Удаляем из базы
-      const { error } = await supabase.from('tasks').delete().eq('id', taskId);
-      if (error) throw error;
+      console.log(`[App] Попытка удаления задачи: ${taskId} из проекта ${projectId}`);
+      const isTemporaryId = taskId.includes('.') || taskId.length < 10;
 
-      // Обновляем локально
+      if (!isTemporaryId) {
+        const { error, status } = await supabase.from('tasks').delete().eq('id', taskId);
+        if (error) {
+          console.error(`[App] Ошибка Supabase при удалении (статус ${status}):`, error.message);
+          throw error;
+        }
+        console.log(`[App] Задача удалена из БД успешно`);
+      } else {
+        console.log(`[App] Задача с временным ID удалена только локально`);
+      }
+
       setProjects(prev => prev.map(p => 
         p.id === projectId ? { ...p, tasks: p.tasks.filter(t => t.id !== taskId) } : p
       ));
@@ -201,6 +226,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Ошибка удаления задачи:', err);
+      alert('Не удалось удалить задачу. Подробности в консоли.');
     }
   };
 

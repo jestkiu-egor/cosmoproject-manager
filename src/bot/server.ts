@@ -86,9 +86,12 @@ bot.on('text', async (ctx) => {
         return ctx.reply('В базе пока нет проектов. Создайте проект в дашборде.');
       }
 
-      const buttons = projects.map(p => Markup.button.callback(p.name, `proj_${p.id}`));
+      const buttons = projects.map(p => [Markup.button.callback(p.name, `proj_${p.id}`)]);
+      // Добавляем кнопку отмены в конец списка
+      buttons.push([Markup.button.callback('❌ Отменить создание', 'cancel')]);
+
       logger(`[REPLY] Отправка списка проектов...`);
-      return ctx.reply(`Куда добавить задачу "${title}" (${amount} ₽)?`, Markup.inlineKeyboard(buttons, { columns: 2 }));
+      return ctx.reply(`Куда добавить задачу "${title}" (${amount} ₽)?`, Markup.inlineKeyboard(buttons));
     } catch (err: any) {
       logger(`[CRITICAL] Исключение: ${err.message}`);
       return ctx.reply(`Критическая ошибка: ${err.message}`);

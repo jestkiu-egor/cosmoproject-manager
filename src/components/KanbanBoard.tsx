@@ -329,7 +329,7 @@ function ColumnComponent({ column, tasks, onEdit, onDelete, onAddTask, onTaskCli
   );
 }
 
-export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks, onSelectProject }: KanbanBoardProps) => {
+export const KanbanBoard = ({ tasks, projects, selectedProjectId, onUpdateTasks, onDeleteTask, onSelectProject }: KanbanBoardProps) => {
   const [columns, setColumns] = useState<Column[]>(DEFAULT_COLUMNS);
   const [isAddColumnModalOpen, setIsAddColumnModalOpen] = useState(false);
   const [newColumnName, setNewColumnName] = useState('');
